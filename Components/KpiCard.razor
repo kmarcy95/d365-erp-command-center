@@ -1,0 +1,20 @@
+<FluentCard Class="kpi-card">
+    <div class="kpi-label">@Label</div>
+    <div class="kpi-value">@Value</div>
+    @if (!string.IsNullOrEmpty(Delta))
+    {
+        <div class="kpi-delta @(Positive ? "up" : "down")">@(Positive ? "▲" : "▼") @Delta</div>
+    }
+    @if (!string.IsNullOrEmpty(Sub))
+    {
+        <div class="kpi-sub">@Sub</div>
+    }
+</FluentCard>
+
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public string Value { get; set; } = "";
+    [Parameter] public string? Delta { get; set; }
+    [Parameter] public bool Positive { get; set; } = true;
+    [Parameter] public string? Sub { get; set; }
+}

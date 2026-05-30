@@ -64,7 +64,10 @@ html, body { margin: 0; font-family: 'Segoe UI', system-ui, -apple-system, sans-
 .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; }
 .chart-card { padding: 1rem 1.15rem; }
 .chart-card h3 { margin: 0 0 .8rem; font-size: 1rem; }
-.chart-card canvas { max-height: 280px; }
+.chart-canvas-wrap { position: relative; height: 280px; }
+.kpi-card .kpi-sub { color: #8a8a8a; font-size: .78rem; margin-top: .15rem; }
+.page-asof { color: #8a8a8a; font-size: .85rem; }
+.page-header .page-asof { white-space: nowrap; }
 
 @media (max-width: 720px) {
     .content-inner { padding: 1rem; }

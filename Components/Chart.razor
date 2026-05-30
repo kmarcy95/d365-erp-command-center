@@ -1,0 +1,88 @@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div class="chart-card">
+    @if (!string.IsNullOrEmpty(Title))
+    {
+        <h3>@Title</h3>
+    }
+    <div class="chart-canvas-wrap">
+        <canvas id="@_id"></canvas>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string Type { get; set; } = "bar";   // bar | line | doughnut | pie
+    [Parameter] public string[] Labels { get; set; } = Array.Empty<string>();
+    [Parameter] public List<ChartSeries> Series { get; set; } = new();
+    [Parameter] public bool Stacked { get; set; }
+
+    private readonly string _id = "c" + Guid.NewGuid().ToString("N");
+
+    private static readonly string[] Palette =
+        { "#0f6cbd", "#2dd4bf", "#f59e0b", "#ef4444", "#8b5cf6", "#10b981", "#0ea5e9", "#ec4899" };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await JS.InvokeVoidAsync("afcCharts.render", _id, BuildConfig());
+    }
+
+    private object BuildConfig()
+    {
+        bool circular = Type is "doughnut" or "pie";
+        object datasets;
+        if (circular)
+        {
+            datasets = new[]
+            {
+                new
+                {
+                    data = Series.Count > 0 ? Series[0].Data : Array.Empty<double>(),
+                    backgroundColor = Palette,
+                    borderWidth = 0
+                }
+            };
+        }
+        else
+        {
+            datasets = Series.Select((s, i) => new
+            {
+                label = s.Label,
+                data = s.Data,
+                backgroundColor = s.Color ?? Palette[i % Palette.Length],
+                borderColor = s.Color ?? Palette[i % Palette.Length],
+                borderWidth = Type == "line" ? 2 : 0,
+                fill = false,
+                tension = 0.3,
+                borderRadius = Type == "bar" ? 4 : 0
+            }).ToArray();
+        }
+
+        bool showLegend = circular || Series.Count > 1;
+
+        return new
+        {
+            type = Type,
+            data = new { labels = Labels, datasets },
+            options = new
+            {
+                responsive = true,
+                maintainAspectRatio = false,
+                plugins = new { legend = new { display = showLegend, position = "bottom" } },
+                scales = circular
+                    ? null
+                    : new
+                    {
+                        x = new { stacked = Stacked, grid = new { display = false } },
+                        y = new { stacked = Stacked, beginAtZero = true }
+                    }
+            }
+        };
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("afcCharts.destroy", _id); } catch { }
+    }
+}

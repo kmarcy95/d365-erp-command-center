@@ -10,4 +10,7 @@ gitsetup.txt
 runs.txt
 watch.txt
 pages.txt
+result.txt
+tmpai-job-tracker/
+tmp*/
 *.db

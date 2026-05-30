@@ -1,4 +1,5 @@
 @inherits LayoutComponentBase
+@inject AppData AppData
 
 <FluentDesignTheme @bind-Mode="@_mode" StorageName="afc-theme" />
 
@@ -13,6 +14,7 @@
         </div>
         <FluentSpacer />
         <FluentBadge Appearance="Appearance.Neutral" Class="env-badge">DEMO · UAT</FluentBadge>
+        <FluentButton Appearance="Appearance.Stealth" Title="Reset demo data" OnClick="ResetData">↺ Reset data</FluentButton>
         <FluentButton Appearance="Appearance.Stealth" Title="Toggle light / dark" OnClick="ToggleTheme">@(_mode == DesignThemeModes.Light ? "🌙" : "☀️")</FluentButton>
     </FluentHeader>
 
@@ -34,6 +36,10 @@
 
 @code {
     private DesignThemeModes _mode = DesignThemeModes.Light;
+
+    protected override async Task OnInitializedAsync() => await AppData.InitializeAsync();
+
+    private async Task ResetData() => await AppData.ResetDemoDataAsync();
 
     private void ToggleTheme()
         => _mode = _mode == DesignThemeModes.Light ? DesignThemeModes.Dark : DesignThemeModes.Light;

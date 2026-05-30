@@ -1,0 +1,24 @@
+@* Temporary placeholder used during the phased build. Replaced as each module ships. *@
+
+<div class="page-header">
+    <div>
+        <h1>@Title</h1>
+        @if (!string.IsNullOrWhiteSpace(Persona))
+        {
+            <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">@Persona</FluentBadge>
+        }
+    </div>
+</div>
+
+<FluentCard Class="placeholder-card">
+    <div class="placeholder-emoji">🛠️</div>
+    <h2>Module in build</h2>
+    <p>@(string.IsNullOrWhiteSpace(Blurb) ? "This module is part of the staged rollout of the Command Center and is being wired up next." : Blurb)</p>
+    <FluentAnchor Href="executive-dashboard" Appearance="Appearance.Accent">Go to the Executive Dashboard</FluentAnchor>
+</FluentCard>
+
+@code {
+    [Parameter] public string Title { get; set; } = "Module";
+    [Parameter] public string? Persona { get; set; }
+    [Parameter] public string? Blurb { get; set; }
+}

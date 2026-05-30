@@ -1,0 +1,9 @@
+bin/
+obj/
+release/
+publish/
+.vs/
+*.user
+*.log
+buildout.txt
+*.db

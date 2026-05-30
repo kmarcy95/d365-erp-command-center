@@ -1,0 +1,49 @@
+@page "/"
+@inject NavigationManager Nav
+
+<PageTitle>Overview · D365 ERP Command Center</PageTitle>
+
+<div class="hero">
+    <div class="hero-text">
+        <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">Portfolio demo</FluentBadge>
+        <h1>Alamo Foods Co. — D365 ERP Command Center</h1>
+        <p class="hero-lede">
+            A working slice of a Dynamics&nbsp;365 Finance&nbsp;&amp; Operations roll-out for a fictional
+            San&nbsp;Antonio food manufacturer — plus the implementation toolkit that delivers it.
+            Built to show what I bring as a <strong>Business Analyst</strong>, <strong>D365 ERP Analyst</strong>,
+            <strong>Data Analyst</strong>, and <strong>Project Manager</strong>.
+        </p>
+        <div class="hero-actions">
+            <FluentButton Appearance="Appearance.Accent" OnClick="@(() => Nav.NavigateTo("executive-dashboard"))">Open the Executive Dashboard</FluentButton>
+            <FluentButton Appearance="Appearance.Outline" OnClick="@(() => Nav.NavigateTo("about"))">What this demonstrates</FluentButton>
+        </div>
+    </div>
+</div>
+
+<h2 class="section-title">Four roles, one application</h2>
+<div class="persona-grid">
+    <FluentCard Class="persona-card">
+        <div class="persona-emoji">📊</div>
+        <h3>Data Analyst</h3>
+        <p>Executive KPI dashboard and financial analytics — revenue trends, AP/AR aging, budget vs actual, inventory turns — modeled on Power BI-style reporting.</p>
+    </FluentCard>
+    <FluentCard Class="persona-card">
+        <div class="persona-emoji">🏦</div>
+        <h3>D365 ERP Analyst</h3>
+        <p>Real F&amp;O modules: General Ledger, Accounts Payable/Receivable, Procurement, Inventory and Sales — with consistent, drillable data.</p>
+    </FluentCard>
+    <FluentCard Class="persona-card">
+        <div class="persona-emoji">📋</div>
+        <h3>Business Analyst</h3>
+        <p>Fit-gap analysis, a requirements traceability matrix, UAT test management and an end-to-end process catalog (P2P / O2C / R2R).</p>
+    </FluentCard>
+    <FluentCard Class="persona-card">
+        <div class="persona-emoji">🗓️</div>
+        <h3>Project Manager</h3>
+        <p>A Success-by-Design roadmap with milestones, a live RAID log with risk heatmap, and auto-generated executive status reports.</p>
+    </FluentCard>
+</div>
+
+<FluentMessageBar Title="Self-contained demo" Intent="MessageIntent.Info" AllowDismiss="false" Class="home-note">
+    Everything runs in your browser — seeded with a coherent demo dataset and saved to local storage. No login, no backend, nothing to install.
+</FluentMessageBar>

@@ -1,0 +1,73 @@
+:root {
+    --afc-accent: #0f6cbd;
+    --afc-accent-strong: #115ea3;
+    --afc-maxw: 1320px;
+}
+
+html, body { margin: 0; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+
+/* ---------- Loading splash ---------- */
+.app-loading { height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; background: #faf9f8; color: #605e5c; }
+.app-loading-mark { width: 64px; height: 64px; border-radius: 16px; display: grid; place-items: center; font-weight: 800; font-size: 1.5rem; color: #fff; background: linear-gradient(135deg, #0f6cbd, #2899f5); box-shadow: 0 8px 24px rgba(15,108,189,.35); animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.06)} }
+.app-loading-text { font-size: .95rem; }
+
+/* ---------- App shell ---------- */
+.app-layout { min-height: 100vh; }
+.app-header { display: flex; align-items: center; gap: .75rem; background: linear-gradient(90deg, #0f6cbd, #1b86d6) !important; color: #fff !important; }
+.app-header .brand { display: flex; align-items: center; gap: .6rem; }
+.app-header .brand-mark { width: 38px; height: 38px; border-radius: 9px; background: rgba(255,255,255,.18); display: grid; place-items: center; font-weight: 800; letter-spacing: .5px; }
+.app-header .brand-text { display: flex; flex-direction: column; line-height: 1.15; }
+.app-header .brand-title { font-weight: 700; font-size: 1.02rem; }
+.app-header .brand-sub { font-size: .74rem; opacity: .85; }
+.app-header .env-badge { margin-right: .25rem; }
+
+.app-body { flex: 1; align-items: stretch; }
+.nav-shell { background: var(--neutral-layer-1, #fff); border-right: 1px solid var(--neutral-stroke-rest, #edebe9); }
+.app-content { width: 100%; background: var(--neutral-layer-2, #faf9f8); }
+.content-inner { max-width: var(--afc-maxw); margin: 0 auto; padding: 1.6rem 2rem 3rem; }
+
+.app-footer { display: flex; align-items: center; gap: .5rem; font-size: .8rem; color: #605e5c; border-top: 1px solid #edebe9; background: #fff; }
+
+/* ---------- Page header ---------- */
+.page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.1rem; }
+.page-header h1 { font-size: 1.55rem; margin: 0 0 .35rem; }
+.persona-badge { font-weight: 600; }
+
+/* ---------- Home ---------- */
+.hero { background: linear-gradient(135deg, #0f6cbd 0%, #2b3a67 100%); color: #fff; border-radius: 16px; padding: 2.4rem 2.2rem; box-shadow: 0 12px 32px rgba(15,108,189,.25); margin-bottom: 2rem; }
+.hero h1 { font-size: 2rem; margin: .6rem 0 .5rem; line-height: 1.15; }
+.hero-lede { font-size: 1.04rem; max-width: 760px; opacity: .94; line-height: 1.55; }
+.hero-actions { display: flex; gap: .75rem; margin-top: 1.4rem; flex-wrap: wrap; }
+
+.section-title { font-size: 1.2rem; margin: 1.8rem 0 1rem; }
+.persona-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; }
+.persona-card { padding: 1.2rem 1.3rem; }
+.persona-card .persona-emoji { font-size: 1.8rem; }
+.persona-card h3 { margin: .5rem 0 .35rem; font-size: 1.05rem; }
+.persona-card p { color: #605e5c; font-size: .9rem; line-height: 1.5; margin: 0; }
+.home-note { margin-top: 1.6rem; }
+
+/* ---------- Placeholder ---------- */
+.placeholder-card { padding: 2.4rem; text-align: center; }
+.placeholder-card .placeholder-emoji { font-size: 2.2rem; }
+.placeholder-card h2 { margin: .6rem 0 .4rem; }
+.placeholder-card p { color: #605e5c; max-width: 520px; margin: 0 auto 1.2rem; }
+
+/* ---------- KPI / charts (later phases) ---------- */
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1rem; margin-bottom: 1.4rem; }
+.kpi-card { padding: 1rem 1.15rem; }
+.kpi-card .kpi-label { color: #605e5c; font-size: .8rem; text-transform: uppercase; letter-spacing: .4px; }
+.kpi-card .kpi-value { font-size: 1.6rem; font-weight: 700; margin: .25rem 0; }
+.kpi-card .kpi-delta.up { color: #107c10; }
+.kpi-card .kpi-delta.down { color: #d13438; }
+.chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; }
+.chart-card { padding: 1rem 1.15rem; }
+.chart-card h3 { margin: 0 0 .8rem; font-size: 1rem; }
+.chart-card canvas { max-height: 280px; }
+
+@media (max-width: 720px) {
+    .content-inner { padding: 1rem; }
+    .hero { padding: 1.6rem; }
+    .hero h1 { font-size: 1.5rem; }
+}

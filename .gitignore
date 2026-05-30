@@ -6,4 +6,8 @@ publish/
 *.user
 *.log
 buildout.txt
+gitsetup.txt
+runs.txt
+watch.txt
+pages.txt
 *.db

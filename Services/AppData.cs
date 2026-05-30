@@ -1,19 +1,17 @@
-using Blazored.LocalStorage;
-
 namespace D365CommandCenter.Services;
 
 /// <summary>
 /// Central in-memory data store for the demo. Phase 2 fills this with the
-/// coherent Alamo Foods Co. dataset plus localStorage load/save. For the
-/// foundation build it exposes the lifecycle the UI calls into.
+/// coherent Alamo Foods Co. dataset and persists it via <see cref="BrowserStorage"/>.
+/// For the foundation build it exposes the lifecycle the UI calls into.
 /// </summary>
 public class AppData
 {
-    private readonly ILocalStorageService _localStorage;
+    private readonly BrowserStorage _storage;
 
-    public AppData(ILocalStorageService localStorage)
+    public AppData(BrowserStorage storage)
     {
-        _localStorage = localStorage;
+        _storage = storage;
     }
 
     public bool IsLoaded { get; private set; }

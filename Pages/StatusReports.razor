@@ -1,3 +1,224 @@
 @page "/status-reports"
+@inject AppData AppData
+@inject IJSRuntime JS
 <PageTitle>Status Reports · D365 ERP Command Center</PageTitle>
-<Placeholder Title="Status Reports" Persona="Project Manager" Blurb="Executive RAG status generated from live project data." />
+
+<style>
+    .report-section { margin-bottom: 1.4rem; }
+    .report-section h2 { margin: 0 0 .6rem; font-size: 1.15rem; }
+    .report-card { padding: 1.1rem 1.3rem; }
+    .report-list { margin: 0; padding: 0; list-style: none; }
+    .report-list li { display: flex; justify-content: space-between; gap: 1rem; padding: .45rem 0; border-bottom: 1px solid #eee; }
+    .report-list li:last-child { border-bottom: none; }
+    .report-meta { color: #605e5c; font-size: .85rem; }
+    .rag-banner { display: flex; align-items: center; gap: 1rem; padding: 1.2rem 1.4rem; border-radius: 12px; margin-bottom: 1.4rem; }
+    .rag-banner h2 { margin: 0; font-size: 1.3rem; }
+</style>
+
+<div class="page-header">
+    <div>
+        <h1>Status Reports</h1>
+        <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">Project Manager</FluentBadge>
+    </div>
+    <FluentButton Appearance="Appearance.Accent" OnClick="CopyReport">Copy report</FluentButton>
+</div>
+
+@if (!_ready)
+{
+    <FluentProgressRing />
+}
+else
+{
+    <FluentCard Class="rag-banner">
+        <StatusBadge Text="@RagLabel(_overallRag)" Kind="@RagKind(_overallRag)" />
+        <div>
+            <h2>Overall: @RagLabel(_overallRag)</h2>
+            <div class="report-meta">@AppData.Data.CompanyName · @Fmt.Pct(_overallPct) complete · as of @_asOf.ToString("MMM d, yyyy")</div>
+        </div>
+    </FluentCard>
+
+    <div class="kpi-grid">
+        <KpiCard Label="Overall % Complete" Value="@Fmt.Pct(_overallPct)" Sub="Average across phases" />
+        <KpiCard Label="Open Risks" Value="@Fmt.Num(_openRisks)" Sub="Not closed" Positive="false" />
+        <KpiCard Label="Test Pass Rate" Value="@Fmt.Pct(_passRate)" Sub="Of all test cases" />
+        <KpiCard Label="AR Outstanding" Value="@Fmt.Money(_arTotal)" Sub="Open receivables" />
+    </div>
+
+    <div class="report-section">
+        <h2>Upcoming Milestones</h2>
+        <FluentCard Class="report-card">
+            @if (_upcoming.Count == 0)
+            {
+                <p class="report-meta">No upcoming milestones.</p>
+            }
+            else
+            {
+                <ul class="report-list">
+                    @foreach (var m in _upcoming)
+                    {
+                        <li>
+                            <span><strong>@m.Name</strong> <span class="report-meta">· @m.PhaseName · @m.Owner</span></span>
+                            <span>
+                                <span class="report-meta">@m.DueDate.ToString("MMM d, yyyy")</span>
+                                <StatusBadge Text="@m.Status" Kind="@MilestoneKind(m.Status)" />
+                            </span>
+                        </li>
+                    }
+                </ul>
+            }
+        </FluentCard>
+    </div>
+
+    <div class="report-section">
+        <h2>Top Open Risks</h2>
+        <FluentCard Class="report-card">
+            @if (_topRisks.Count == 0)
+            {
+                <p class="report-meta">No open risks.</p>
+            }
+            else
+            {
+                <ul class="report-list">
+                    @foreach (var r in _topRisks)
+                    {
+                        <li>
+                            <span><strong>@r.Id</strong> @r.Title <span class="report-meta">· @r.Owner</span></span>
+                            <span>
+                                <span class="report-meta">Score @r.Score</span>
+                                <StatusBadge Text="@r.Severity" Kind="@SeverityKind(r.Severity)" />
+                            </span>
+                        </li>
+                    }
+                </ul>
+            }
+        </FluentCard>
+    </div>
+
+    <div class="report-section">
+        <h2>Finance Snapshot</h2>
+        <FluentCard Class="report-card">
+            <ul class="report-list">
+                <li><span>Accounts Receivable outstanding (open)</span><span>@Fmt.Money(_arTotal)</span></li>
+                <li><span>Accounts Payable outstanding (open)</span><span>@Fmt.Money(_apTotal)</span></li>
+            </ul>
+        </FluentCard>
+    </div>
+}
+
+@code {
+    private bool _ready;
+    private DateOnly _asOf;
+    private RagStatus _overallRag;
+    private decimal _overallPct;
+    private int _openRisks;
+    private decimal _passRate;
+    private decimal _arTotal;
+    private decimal _apTotal;
+    private List<Milestone> _upcoming = new();
+    private List<RaidEntry> _topRisks = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AppData.InitializeAsync();
+        var d = AppData.Data;
+        _asOf = d.AsOf;
+
+        var phases = d.Phases.ToList();
+        _overallPct = phases.Count > 0 ? (decimal)phases.Average(p => p.PercentComplete) : 0m;
+
+        var risks = d.Raid.Where(r => r.Type == RaidType.Risk).ToList();
+        _openRisks = d.Raid.Count(r => r.Type == RaidType.Risk && r.Status != "Closed");
+        bool anyHighOpenRisk = risks.Any(r => r.Status != "Closed" && r.Severity == "High");
+
+        if (phases.Any(p => p.Rag == RagStatus.OffTrack) || anyHighOpenRisk)
+            _overallRag = RagStatus.OffTrack;
+        else if (phases.Any(p => p.Rag == RagStatus.AtRisk))
+            _overallRag = RagStatus.AtRisk;
+        else
+            _overallRag = RagStatus.OnTrack;
+
+        _upcoming = d.Milestones
+            .Where(m => m.Status != "Complete")
+            .OrderBy(m => m.DueDate)
+            .Take(3)
+            .ToList();
+
+        _topRisks = risks
+            .Where(r => r.Status != "Closed")
+            .OrderByDescending(r => r.Score)
+            .Take(5)
+            .ToList();
+
+        var tests = d.TestCases.ToList();
+        int passed = tests.Count(t => t.Result == TestResult.Pass);
+        _passRate = tests.Count == 0 ? 0m : (decimal)passed / tests.Count * 100m;
+
+        _arTotal = d.ArInvoices.Where(i => i.Status != InvoiceStatus.Paid).Sum(i => i.Amount);
+        _apTotal = d.ApInvoices.Where(i => i.Status != InvoiceStatus.Paid).Sum(i => i.Amount);
+
+        _ready = true;
+    }
+
+    private static string RagLabel(RagStatus r) => r switch
+    {
+        RagStatus.OnTrack => "On Track",
+        RagStatus.AtRisk => "At Risk",
+        RagStatus.OffTrack => "Off Track",
+        RagStatus.Complete => "Complete",
+        _ => r.ToString()
+    };
+
+    private static string RagKind(RagStatus r) => r switch
+    {
+        RagStatus.Complete => "good",
+        RagStatus.OnTrack => "good",
+        RagStatus.AtRisk => "warn",
+        RagStatus.OffTrack => "bad",
+        _ => "neutral"
+    };
+
+    private static string MilestoneKind(string status) => status switch
+    {
+        "Complete" => "good",
+        "In Progress" => "info",
+        "At Risk" => "warn",
+        "Not Started" => "neutral",
+        _ => "neutral"
+    };
+
+    private static string SeverityKind(string severity) => severity switch
+    {
+        "High" => "bad",
+        "Medium" => "warn",
+        "Low" => "good",
+        _ => "neutral"
+    };
+
+    private async Task CopyReport()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"EXECUTIVE STATUS REPORT — {AppData.Data.CompanyName}");
+        sb.AppendLine($"As of {_asOf:yyyy-MM-dd}");
+        sb.AppendLine();
+        sb.AppendLine($"Overall RAG: {RagLabel(_overallRag)}");
+        sb.AppendLine($"Overall % complete: {Fmt.Pct(_overallPct)}");
+        sb.AppendLine($"Open risks: {_openRisks}");
+        sb.AppendLine($"Test pass rate: {Fmt.Pct(_passRate)}");
+        sb.AppendLine();
+        sb.AppendLine("UPCOMING MILESTONES:");
+        if (_upcoming.Count == 0) sb.AppendLine("  (none)");
+        foreach (var m in _upcoming)
+            sb.AppendLine($"  - {m.Name} ({m.PhaseName}) due {m.DueDate:yyyy-MM-dd} — {m.Status} [{m.Owner}]");
+        sb.AppendLine();
+        sb.AppendLine("TOP OPEN RISKS:");
+        if (_topRisks.Count == 0) sb.AppendLine("  (none)");
+        foreach (var r in _topRisks)
+            sb.AppendLine($"  - {r.Id} {r.Title} — score {r.Score} ({r.Severity}) [{r.Owner}]");
+        sb.AppendLine();
+        sb.AppendLine("FINANCE SNAPSHOT:");
+        sb.AppendLine($"  AR outstanding (open): {Fmt.Money(_arTotal)}");
+        sb.AppendLine($"  AP outstanding (open): {Fmt.Money(_apTotal)}");
+
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", sb.ToString());
+    }
+}

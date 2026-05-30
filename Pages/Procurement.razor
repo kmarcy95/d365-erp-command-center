@@ -1,3 +1,113 @@
 @page "/procurement"
+@inject AppData AppData
+@inject IJSRuntime JS
 <PageTitle>Procurement · D365 ERP Command Center</PageTitle>
-<Placeholder Title="Procurement" Persona="D365 ERP Analyst" Blurb="Purchase orders, requisitions and approval workflow." />
+
+<div class="page-header">
+    <div>
+        <h1>Procurement</h1>
+        <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">D365 ERP Analyst</FluentBadge>
+    </div>
+    <FluentButton Appearance="Appearance.Accent" OnClick="Export">Export CSV</FluentButton>
+</div>
+
+@if (!_ready)
+{
+    <FluentProgressRing />
+}
+else
+{
+    <div class="kpi-grid">
+        <KpiCard Label="Open PO Value" Value="@Fmt.Money(_openValue)" Sub="POs not yet received" />
+        <KpiCard Label="Purchase Orders" Value="@Fmt.Num(_all.Count)" Sub="Total POs" />
+        <KpiCard Label="Pending Approval" Value="@Fmt.Num(_pendingApproval)" Sub="Not yet approved" />
+        <KpiCard Label="Vendors" Value="@Fmt.Num(_vendorCount)" Sub="Distinct vendors" />
+    </div>
+
+    <FluentSearch @bind-Value="_search" @bind-Value:after="Apply" Placeholder="Search vendor name or number…" Class="afc-search" />
+
+    <div class="grid-wrap">
+        <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="PurchaseOrder">
+            <PropertyColumn Property="@(p => p.Number)" Title="Number" Sortable="true" />
+            <PropertyColumn Property="@(p => p.VendorName)" Title="Vendor" Sortable="true" />
+            <PropertyColumn Property="@(p => p.OrderDate)" Title="Order Date" Sortable="true" />
+            <PropertyColumn Property="@(p => p.ExpectedDate)" Title="Expected" Sortable="true" />
+            <PropertyColumn Property="@(p => p.Total)" Format="N0" Title="Total ($)" Sortable="true" Align="Align.End" />
+            <TemplateColumn Title="Status" Sortable="false">
+                <StatusBadge Text="@context.Status.ToString()" Kind="@StatusKind(context.Status)" />
+            </TemplateColumn>
+            <TemplateColumn Title="Approval" Sortable="false">
+                <StatusBadge Text="@context.ApprovalStatus" Kind="@(context.ApprovalStatus == "Approved" ? "good" : "warn")" />
+            </TemplateColumn>
+            <PropertyColumn Property="@(p => p.Buyer)" Title="Buyer" Sortable="true" />
+        </FluentDataGrid>
+    </div>
+
+    <FluentPaginator State="@_pagination" />
+}
+
+@code {
+    private bool _ready;
+    private string _search = "";
+
+    private List<PurchaseOrder> _all = new();
+    private IQueryable<PurchaseOrder> _filtered = Enumerable.Empty<PurchaseOrder>().AsQueryable();
+    private readonly PaginationState _pagination = new() { ItemsPerPage = 15 };
+
+    private decimal _openValue;
+    private int _pendingApproval;
+    private int _vendorCount;
+
+    private static string StatusKind(PoStatus s) => s switch
+    {
+        PoStatus.Received => "good",
+        PoStatus.Approved => "info",
+        PoStatus.Submitted => "warn",
+        _ => "neutral"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AppData.InitializeAsync();
+        _all = AppData.Data.PurchaseOrders.ToList();
+
+        _openValue = _all.Where(p => p.Status != PoStatus.Received).Sum(p => p.Total);
+        _pendingApproval = _all.Count(p => p.ApprovalStatus != "Approved");
+        _vendorCount = _all.Select(p => p.VendorNumber).Distinct().Count();
+
+        Apply();
+        _ready = true;
+    }
+
+    private void Apply()
+    {
+        var q = _all.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            var s = _search.Trim();
+            q = q.Where(p =>
+                p.VendorName.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                p.VendorNumber.Contains(s, StringComparison.OrdinalIgnoreCase));
+        }
+        _filtered = q.AsQueryable();
+    }
+
+    private async Task Export()
+    {
+        var headers = new[] { "Number", "Vendor Number", "Vendor Name", "Order Date", "Expected Date", "Total", "Status", "Approval Status", "Buyer" };
+        var rows = _all.Select(p => new[]
+        {
+            p.Number,
+            p.VendorNumber,
+            p.VendorName,
+            p.OrderDate.ToString("yyyy-MM-dd"),
+            p.ExpectedDate.ToString("yyyy-MM-dd"),
+            p.Total.ToString("0.##"),
+            p.Status.ToString(),
+            p.ApprovalStatus,
+            p.Buyer
+        });
+        var csv = Csv.Build(headers, rows);
+        await JS.InvokeVoidAsync("afcDownload", "purchase-orders.csv", csv);
+    }
+}

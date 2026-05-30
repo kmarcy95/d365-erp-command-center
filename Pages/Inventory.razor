@@ -1,3 +1,123 @@
 @page "/inventory"
+@inject AppData AppData
+@inject IJSRuntime JS
 <PageTitle>Inventory · D365 ERP Command Center</PageTitle>
-<Placeholder Title="Inventory" Persona="D365 ERP Analyst" Blurb="On-hand by warehouse, valuation and reorder alerts." />
+
+<div class="page-header">
+    <div>
+        <h1>Inventory</h1>
+        <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">D365 ERP Analyst</FluentBadge>
+    </div>
+    <FluentButton Appearance="Appearance.Accent" OnClick="Export">Export CSV</FluentButton>
+</div>
+
+@if (!_ready)
+{
+    <FluentProgressRing />
+}
+else
+{
+    <div class="kpi-grid">
+        <KpiCard Label="Inventory Value" Value="@Fmt.Money(_totalValue)" Sub="On-hand × unit cost" />
+        <KpiCard Label="SKUs" Value="@Fmt.Num(_all.Count)" Sub="Distinct items" />
+        <KpiCard Label="Below Reorder" Value="@Fmt.Num(_belowReorder)" Sub="Need replenishment" Positive="false" />
+        <KpiCard Label="Warehouses" Value="@Fmt.Num(_warehouseCount)" Sub="Stocking locations" />
+    </div>
+
+    <div class="chart-grid">
+        <Chart Title="Inventory value by category" Type="doughnut" Labels="@_categoryLabels" Series="@_categorySeries" />
+    </div>
+
+    <FluentSearch @bind-Value="_search" @bind-Value:after="Apply" Placeholder="Search name or SKU…" Class="afc-search" />
+
+    <div class="grid-wrap">
+        <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="InventoryItem">
+            <PropertyColumn Property="@(i => i.Sku)" Title="Sku" Sortable="true" />
+            <PropertyColumn Property="@(i => i.Name)" Title="Name" Sortable="true" />
+            <PropertyColumn Property="@(i => i.Category)" Title="Category" Sortable="true" />
+            <PropertyColumn Property="@(i => i.WarehouseCode)" Title="Warehouse" Sortable="true" />
+            <PropertyColumn Property="@(i => i.OnHand)" Format="N0" Title="OnHand" Sortable="true" Align="Align.End" />
+            <PropertyColumn Property="@(i => i.ReorderPoint)" Format="N0" Title="ReorderPoint" Sortable="true" Align="Align.End" />
+            <PropertyColumn Property="@(i => i.UnitCost)" Format="N0" Title="Unit Cost ($)" Sortable="true" Align="Align.End" />
+            <PropertyColumn Property="@(i => i.Value)" Format="N0" Title="Value ($)" Sortable="true" Align="Align.End" />
+            <TemplateColumn Title="Stock" Sortable="false">
+                <StatusBadge Text="@(context.BelowReorder ? "Below reorder" : "OK")" Kind="@(context.BelowReorder ? "bad" : "good")" />
+            </TemplateColumn>
+        </FluentDataGrid>
+    </div>
+
+    <FluentPaginator State="@_pagination" />
+}
+
+@code {
+    private bool _ready;
+    private string _search = "";
+
+    private List<InventoryItem> _all = new();
+    private IQueryable<InventoryItem> _filtered = Enumerable.Empty<InventoryItem>().AsQueryable();
+    private readonly PaginationState _pagination = new() { ItemsPerPage = 15 };
+
+    private decimal _totalValue;
+    private int _belowReorder;
+    private int _warehouseCount;
+
+    private string[] _categoryLabels = Array.Empty<string>();
+    private List<ChartSeries> _categorySeries = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AppData.InitializeAsync();
+        _all = AppData.Data.Inventory.ToList();
+
+        _totalValue = _all.Sum(i => i.Value);
+        _belowReorder = _all.Count(i => i.BelowReorder);
+        _warehouseCount = AppData.Data.Warehouses.Count;
+
+        var byCategory = _all
+            .GroupBy(i => i.Category)
+            .Select(g => new { Category = g.Key, Value = g.Sum(i => i.Value) })
+            .OrderByDescending(g => g.Value)
+            .ToList();
+        _categoryLabels = byCategory.Select(g => g.Category).ToArray();
+        _categorySeries = new List<ChartSeries>
+        {
+            new ChartSeries("Value", byCategory.Select(g => (double)g.Value).ToArray())
+        };
+
+        Apply();
+        _ready = true;
+    }
+
+    private void Apply()
+    {
+        var q = _all.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            var s = _search.Trim();
+            q = q.Where(i =>
+                i.Name.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                i.Sku.Contains(s, StringComparison.OrdinalIgnoreCase));
+        }
+        _filtered = q.AsQueryable();
+    }
+
+    private async Task Export()
+    {
+        var headers = new[] { "Sku", "Name", "Category", "Warehouse", "OnHand", "ReorderPoint", "UnitCost", "UnitPrice", "Value", "BelowReorder" };
+        var rows = _all.Select(i => new[]
+        {
+            i.Sku,
+            i.Name,
+            i.Category,
+            i.WarehouseCode,
+            i.OnHand.ToString(),
+            i.ReorderPoint.ToString(),
+            i.UnitCost.ToString("0.##"),
+            i.UnitPrice.ToString("0.##"),
+            i.Value.ToString("0.##"),
+            i.BelowReorder ? "Yes" : "No"
+        });
+        var csv = Csv.Build(headers, rows);
+        await JS.InvokeVoidAsync("afcDownload", "inventory.csv", csv);
+    }
+}

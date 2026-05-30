@@ -1,3 +1,152 @@
 @page "/raid"
+@inject AppData AppData
+@inject IJSRuntime JS
 <PageTitle>RAID Log · D365 ERP Command Center</PageTitle>
-<Placeholder Title="RAID Log" Persona="Project Manager" Blurb="Risks, assumptions, issues and dependencies with a risk heatmap." />
+
+<style>
+    .heatmap { border-collapse: collapse; margin: .4rem 0 1.4rem; }
+    .heatmap td, .heatmap th { border: 1px solid #e1dfdd; padding: .55rem; text-align: center; font-size: .85rem; }
+    .heatmap th { background: #faf9f8; color: #605e5c; font-weight: 600; }
+    .heatmap td.cell { font-weight: 700; width: 54px; height: 40px; }
+    .heatmap .axis-label { font-weight: 600; color: #605e5c; }
+    .hm-red { background: #fde7e9; color: #b10e1c; }
+    .hm-amber { background: #fff4ce; color: #8a6d00; }
+    .hm-green { background: #dff6dd; color: #0e700e; }
+</style>
+
+<div class="page-header">
+    <div>
+        <h1>RAID Log</h1>
+        <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">Project Manager</FluentBadge>
+    </div>
+</div>
+
+@if (!_ready)
+{
+    <FluentProgressRing />
+}
+else
+{
+    <div class="kpi-grid">
+        <KpiCard Label="Total Entries" Value="@Fmt.Num(_entries.Count)" Sub="Risks, assumptions, issues, dependencies" />
+        <KpiCard Label="Open Risks" Value="@Fmt.Num(_openRisks)" Sub="Risk · not closed" Positive="false" />
+        <KpiCard Label="Open Issues" Value="@Fmt.Num(_openIssues)" Sub="Issue · not closed" Positive="false" />
+        <KpiCard Label="High Severity" Value="@Fmt.Num(_highSeverity)" Sub="Score ≥ 15" Positive="false" />
+    </div>
+
+    <h2>Risk Heatmap</h2>
+    <table class="heatmap">
+        <thead>
+            <tr>
+                <th rowspan="2" colspan="2"></th>
+                <th colspan="5">Probability</th>
+            </tr>
+            <tr>
+                @for (int p = 1; p <= 5; p++)
+                {
+                    <th>@p</th>
+                }
+            </tr>
+        </thead>
+        <tbody>
+            @for (int i = 5; i >= 1; i--)
+            {
+                var impact = i;
+                <tr>
+                    @if (impact == 5)
+                    {
+                        <th rowspan="5" class="axis-label" style="writing-mode:vertical-rl;transform:rotate(180deg);">Impact</th>
+                    }
+                    <th>@impact</th>
+                    @for (int p = 1; p <= 5; p++)
+                    {
+                        var prob = p;
+                        var score = prob * impact;
+                        var count = _risks.Count(r => r.Probability == prob && r.Impact == impact);
+                        <td class="cell @ScoreClass(score)">@count</td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="page-header">
+        <h2 style="margin:0;">All Entries</h2>
+        <FluentButton Appearance="Appearance.Accent" OnClick="ExportCsv">Export CSV</FluentButton>
+    </div>
+    <div class="grid-wrap">
+        <table class="afc-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Type</th>
+                    <th>Title</th>
+                    <th class="num">Prob</th>
+                    <th class="num">Impact</th>
+                    <th class="num">Score</th>
+                    <th>Severity</th>
+                    <th>Owner</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _entries)
+                {
+                    <tr>
+                        <td>@r.Id</td>
+                        <td>@r.Type</td>
+                        <td>@r.Title</td>
+                        <td class="num">@r.Probability</td>
+                        <td class="num">@r.Impact</td>
+                        <td class="num">@r.Score</td>
+                        <td><StatusBadge Text="@r.Severity" Kind="@SeverityKind(r.Severity)" /></td>
+                        <td>@r.Owner</td>
+                        <td>@r.Status</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private bool _ready;
+    private List<RaidEntry> _entries = new();
+    private List<RaidEntry> _risks = new();
+    private int _openRisks;
+    private int _openIssues;
+    private int _highSeverity;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AppData.InitializeAsync();
+        _entries = AppData.Data.Raid.ToList();
+        _risks = _entries.Where(r => r.Type == RaidType.Risk).ToList();
+        _openRisks = _entries.Count(r => r.Type == RaidType.Risk && r.Status != "Closed");
+        _openIssues = _entries.Count(r => r.Type == RaidType.Issue && r.Status != "Closed");
+        _highSeverity = _entries.Count(r => r.Severity == "High");
+        _ready = true;
+    }
+
+    private static string ScoreClass(int score) => score >= 15 ? "hm-red" : score >= 8 ? "hm-amber" : "hm-green";
+
+    private static string SeverityKind(string severity) => severity switch
+    {
+        "High" => "bad",
+        "Medium" => "warn",
+        "Low" => "good",
+        _ => "neutral"
+    };
+
+    private async Task ExportCsv()
+    {
+        var headers = new[] { "ID", "Type", "Title", "Probability", "Impact", "Score", "Severity", "Owner", "Status", "Response" };
+        var rows = _entries.Select(r => new[]
+        {
+            r.Id, r.Type.ToString(), r.Title, r.Probability.ToString(), r.Impact.ToString(),
+            r.Score.ToString(), r.Severity, r.Owner, r.Status, r.Response
+        });
+        var csv = Csv.Build(headers, rows);
+        await JS.InvokeVoidAsync("afcDownload", "raid-log.csv", csv);
+    }
+}

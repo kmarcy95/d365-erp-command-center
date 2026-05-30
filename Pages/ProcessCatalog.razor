@@ -1,3 +1,58 @@
 @page "/process-catalog"
+@inject AppData AppData
 <PageTitle>Process Catalog · D365 ERP Command Center</PageTitle>
-<Placeholder Title="Process Catalog" Persona="Business Analyst" Blurb="End-to-end process flows: procure-to-pay, order-to-cash, record-to-report." />
+
+<style>
+    .flow { display:flex; gap:.5rem; flex-wrap:wrap; align-items:stretch; }
+    .flow-step { background:#fff; border:1px solid #edebe9; border-radius:8px; padding:.7rem .9rem; min-width:150px; flex:1; }
+    .flow-arrow { align-self:center; color:#0f6cbd; font-weight:700; }
+</style>
+
+<div class="page-header">
+    <div>
+        <h1>Process Catalog</h1>
+        <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">Business Analyst</FluentBadge>
+    </div>
+</div>
+
+@if (!_ready)
+{
+    <FluentProgressRing />
+}
+else
+{
+    @foreach (var flow in _flows)
+    {
+        <FluentCard Class="process-flow-card">
+            <h2>@flow.Name (@flow.Code)</h2>
+            <p>@flow.Description</p>
+            <div class="flow">
+                @for (var i = 0; i < flow.Steps.Count; i++)
+                {
+                    var step = flow.Steps[i];
+                    <div class="flow-step">
+                        <div><strong>@step.Order. @step.Name</strong></div>
+                        <div>@step.Role</div>
+                        <div><StatusBadge Text="@step.System" Kind="info" /></div>
+                    </div>
+                    @if (i < flow.Steps.Count - 1)
+                    {
+                        <span class="flow-arrow">→</span>
+                    }
+                }
+            </div>
+        </FluentCard>
+    }
+}
+
+@code {
+    private bool _ready;
+    private List<ProcessFlow> _flows = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AppData.InitializeAsync();
+        _flows = AppData.Data.Processes.ToList();
+        _ready = true;
+    }
+}

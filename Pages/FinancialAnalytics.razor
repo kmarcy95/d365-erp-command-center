@@ -1,3 +1,212 @@
 @page "/financial-analytics"
+@inject AppData AppData
 <PageTitle>Financial Analytics · D365 ERP Command Center</PageTitle>
-<Placeholder Title="Financial Analytics" Persona="Data Analyst" Blurb="Trial balance, P and L and balance sheet computed live from the general ledger." />
+
+<div class="page-header">
+    <div>
+        <h1>Financial Analytics</h1>
+        <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">Data Analyst</FluentBadge>
+    </div>
+</div>
+
+@if (!_ready)
+{
+    <FluentProgressRing />
+}
+else
+{
+    @* ---- INCOME STATEMENT KPIs ---- *@
+    <div class="kpi-grid">
+        <KpiCard Label="Revenue" Value="@Fmt.Money(_revenue)" Sub="Account 4000" />
+        <KpiCard Label="Gross Margin %" Value="@Fmt.Pct(_grossMarginPct)" Sub="Gross profit ÷ revenue" />
+        <KpiCard Label="Operating Income" Value="@Fmt.Money(_operatingIncome)" Sub="Gross profit − OpEx" Positive="@(_operatingIncome >= 0)" />
+    </div>
+
+    @* ---- TRIAL BALANCE ---- *@
+    <h2>Trial Balance</h2>
+    <table class="afc-table">
+        <thead>
+            <tr>
+                <th>Account</th>
+                <th>Name</th>
+                <th>Type</th>
+                <th class="num">Debit</th>
+                <th class="num">Credit</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var a in _accounts)
+            {
+                var isDebit = a.Type == AccountType.Asset || a.Type == AccountType.Expense;
+                <tr>
+                    <td>@a.Number</td>
+                    <td>@a.Name</td>
+                    <td>@a.Type</td>
+                    <td class="num">@(isDebit ? Fmt.Num(a.Balance) : "")</td>
+                    <td class="num">@(isDebit ? "" : Fmt.Num(a.Balance))</td>
+                </tr>
+            }
+            <tr class="total">
+                <td>Total</td>
+                <td></td>
+                <td></td>
+                <td class="num">@Fmt.Num(_debitTotal)</td>
+                <td class="num">@Fmt.Num(_creditTotal)</td>
+            </tr>
+        </tbody>
+    </table>
+
+    @* ---- INCOME STATEMENT ---- *@
+    <h2>Income Statement (P&amp;L)</h2>
+    <table class="afc-table">
+        <thead>
+            <tr>
+                <th>Line</th>
+                <th class="num">Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Revenue</td>
+                <td class="num">@Fmt.Money(_revenue)</td>
+            </tr>
+            <tr>
+                <td>Cost of Goods Sold</td>
+                <td class="num">@Fmt.Money(_cogs)</td>
+            </tr>
+            <tr class="total">
+                <td>Gross Profit</td>
+                <td class="num">@Fmt.Money(_grossProfit)</td>
+            </tr>
+            <tr>
+                <td>Operating Expenses</td>
+                <td class="num">@Fmt.Money(_opex)</td>
+            </tr>
+            <tr class="total">
+                <td>Operating Income</td>
+                <td class="num">@Fmt.Money(_operatingIncome)</td>
+            </tr>
+        </tbody>
+    </table>
+
+    @* ---- BALANCE SHEET ---- *@
+    <h2>
+        Balance Sheet
+        <StatusBadge Text="@(_balanced ? "Balanced" : "Out of balance")" Kind="@(_balanced ? "good" : "bad")" />
+    </h2>
+    <table class="afc-table">
+        <thead>
+            <tr>
+                <th>Account</th>
+                <th>Name</th>
+                <th class="num">Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var n in _assetNums)
+            {
+                <tr>
+                    <td>@n</td>
+                    <td>@NameOf(n)</td>
+                    <td class="num">@Fmt.Money(Bal(n))</td>
+                </tr>
+            }
+            <tr class="total">
+                <td>Total Assets</td>
+                <td></td>
+                <td class="num">@Fmt.Money(_assetsTotal)</td>
+            </tr>
+
+            @foreach (var n in _liabilityNums)
+            {
+                <tr>
+                    <td>@n</td>
+                    <td>@NameOf(n)</td>
+                    <td class="num">@Fmt.Money(Bal(n))</td>
+                </tr>
+            }
+            <tr class="total">
+                <td>Total Liabilities</td>
+                <td></td>
+                <td class="num">@Fmt.Money(_liabilitiesTotal)</td>
+            </tr>
+
+            @foreach (var n in _equityNums)
+            {
+                <tr>
+                    <td>@n</td>
+                    <td>@NameOf(n)</td>
+                    <td class="num">@Fmt.Money(Bal(n))</td>
+                </tr>
+            }
+            <tr class="total">
+                <td>Total Equity</td>
+                <td></td>
+                <td class="num">@Fmt.Money(_equityTotal)</td>
+            </tr>
+
+            <tr class="total">
+                <td>Liabilities + Equity</td>
+                <td></td>
+                <td class="num">@Fmt.Money(_liabilitiesTotal + _equityTotal)</td>
+            </tr>
+        </tbody>
+    </table>
+}
+
+@code {
+    private bool _ready;
+    private List<GlAccount> _accounts = new();
+
+    private readonly string[] _assetNums = { "1000", "1100", "1200", "1500" };
+    private readonly string[] _liabilityNums = { "2000", "2100", "2500" };
+    private readonly string[] _equityNums = { "3000", "3100" };
+
+    private decimal _debitTotal;
+    private decimal _creditTotal;
+
+    private decimal _revenue;
+    private decimal _cogs;
+    private decimal _grossProfit;
+    private decimal _opex;
+    private decimal _operatingIncome;
+    private decimal _grossMarginPct;
+
+    private decimal _assetsTotal;
+    private decimal _liabilitiesTotal;
+    private decimal _equityTotal;
+    private bool _balanced;
+
+    private decimal Bal(string num)
+        => _accounts.Where(a => a.Number == num).Sum(a => a.Balance);
+
+    private string NameOf(string num)
+        => _accounts.FirstOrDefault(a => a.Number == num)?.Name ?? num;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AppData.InitializeAsync();
+        _accounts = AppData.Data.GlAccounts.ToList();
+
+        _debitTotal = _accounts
+            .Where(a => a.Type == AccountType.Asset || a.Type == AccountType.Expense)
+            .Sum(a => a.Balance);
+        _creditTotal = _accounts
+            .Where(a => a.Type != AccountType.Asset && a.Type != AccountType.Expense)
+            .Sum(a => a.Balance);
+
+        _revenue = Bal("4000");
+        _cogs = Bal("5000");
+        _grossProfit = _revenue - _cogs;
+        _opex = Bal("6000") + Bal("6500") + Bal("6900");
+        _operatingIncome = _grossProfit - _opex;
+        _grossMarginPct = _revenue == 0 ? 0 : _grossProfit / _revenue * 100m;
+
+        _assetsTotal = _assetNums.Sum(Bal);
+        _liabilitiesTotal = _liabilityNums.Sum(Bal);
+        _equityTotal = _equityNums.Sum(Bal);
+        _balanced = Math.Abs(_assetsTotal - (_liabilitiesTotal + _equityTotal)) <= 1m;
+
+        _ready = true;
+    }
+}

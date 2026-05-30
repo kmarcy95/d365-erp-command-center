@@ -1,3 +1,125 @@
 @page "/test-management"
+@inject AppData AppData
+@inject IJSRuntime JS
 <PageTitle>Test and UAT Management · D365 ERP Command Center</PageTitle>
-<Placeholder Title="Test and UAT Management" Persona="Business Analyst" Blurb="Test cases, pass and fail and coverage." />
+
+<div class="page-header">
+    <div>
+        <h1>Test and UAT Management</h1>
+        <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">Business Analyst</FluentBadge>
+    </div>
+</div>
+
+@if (!_ready)
+{
+    <FluentProgressRing />
+}
+else
+{
+    <div class="kpi-grid">
+        <KpiCard Label="Test Cases" Value="@Fmt.Num(_tests.Count)" Sub="Total authored" />
+        <KpiCard Label="Passed" Value="@Fmt.Num(_passed)" Sub="Result · Pass" />
+        <KpiCard Label="Failed" Value="@Fmt.Num(_failed)" Sub="Result · Fail" Positive="false" />
+        <KpiCard Label="Pass Rate" Value="@Fmt.Pct(_passRate)" Sub="Of all test cases" />
+    </div>
+
+    <Chart Title="Test results" Type="doughnut" Labels="_chartLabels" Series="_chartSeries" />
+
+    <div class="page-header" style="margin-top:1.4rem;">
+        <h2 style="margin:0;">Test Cases</h2>
+        <FluentButton Appearance="Appearance.Accent" OnClick="ExportCsv">Export CSV</FluentButton>
+    </div>
+    <FluentSearch @bind-Value="_search" @bind-Value:after="ApplyFilter" Placeholder="Search by title or code" Class="grid-search" />
+    <div class="grid-wrap">
+        <FluentDataGrid Items="@_grid" Pagination="@_pagination" TGridItem="TestCase">
+            <PropertyColumn Property="@(t => t.Code)" Title="Code" Sortable="true" />
+            <PropertyColumn Property="@(t => t.RequirementCode)" Title="Requirement" Sortable="true" />
+            <PropertyColumn Property="@(t => t.Title)" Title="Title" />
+            <PropertyColumn Property="@(t => t.ProcessArea)" Title="Process Area" Sortable="true" />
+            <TemplateColumn Title="Result" Sortable="true">
+                <StatusBadge Text="@ResultText(context.Result)" Kind="@ResultKind(context.Result)" />
+            </TemplateColumn>
+            <TemplateColumn Title="Last Run">
+                @(context.LastRun?.ToString("MMM d, yyyy") ?? "—")
+            </TemplateColumn>
+            <PropertyColumn Property="@(t => t.Tester)" Title="Tester" Sortable="true" />
+        </FluentDataGrid>
+    </div>
+    <FluentPaginator State="@_pagination" />
+}
+
+@code {
+    private bool _ready;
+    private List<TestCase> _tests = new();
+    private IQueryable<TestCase> _grid = Enumerable.Empty<TestCase>().AsQueryable();
+    private readonly PaginationState _pagination = new() { ItemsPerPage = 15 };
+    private string _search = "";
+
+    private int _passed;
+    private int _failed;
+    private decimal _passRate;
+
+    private string[] _chartLabels = Array.Empty<string>();
+    private List<ChartSeries> _chartSeries = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AppData.InitializeAsync();
+        _tests = AppData.Data.TestCases.ToList();
+        ApplyFilter();
+
+        _passed = _tests.Count(t => t.Result == TestResult.Pass);
+        _failed = _tests.Count(t => t.Result == TestResult.Fail);
+        int notRun = _tests.Count(t => t.Result == TestResult.NotRun);
+        _passRate = _tests.Count == 0 ? 0m : (decimal)_passed / _tests.Count * 100m;
+
+        _chartLabels = new[] { "Pass", "Fail", "Not Run" };
+        _chartSeries = new List<ChartSeries>
+        {
+            new ChartSeries("Test cases", new double[] { _passed, _failed, notRun })
+        };
+
+        _ready = true;
+    }
+
+    private void ApplyFilter()
+    {
+        IEnumerable<TestCase> q = _tests;
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            var s = _search.Trim();
+            q = q.Where(t =>
+                t.Title.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                t.Code.Contains(s, StringComparison.OrdinalIgnoreCase));
+        }
+        _grid = q.AsQueryable();
+    }
+
+    private static string ResultText(TestResult r) => r switch
+    {
+        TestResult.Pass => "Pass",
+        TestResult.Fail => "Fail",
+        TestResult.NotRun => "Not Run",
+        _ => r.ToString()
+    };
+
+    private static string ResultKind(TestResult r) => r switch
+    {
+        TestResult.Pass => "good",
+        TestResult.Fail => "bad",
+        TestResult.NotRun => "neutral",
+        _ => "neutral"
+    };
+
+    private async Task ExportCsv()
+    {
+        var headers = new[] { "Code", "Requirement", "Title", "Process Area", "Result", "Last Run", "Tester" };
+        var rows = _tests.Select(t => new[]
+        {
+            t.Code, t.RequirementCode, t.Title, t.ProcessArea, ResultText(t.Result),
+            t.LastRun?.ToString("yyyy-MM-dd") ?? "", t.Tester
+        });
+        var csv = Csv.Build(headers, rows);
+        await JS.InvokeVoidAsync("afcDownload", "test-cases.csv", csv);
+    }
+}

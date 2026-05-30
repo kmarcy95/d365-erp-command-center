@@ -1,0 +1,102 @@
+@page "/fit-gap"
+@inject AppData AppData
+@inject IJSRuntime JS
+<PageTitle>Fit-Gap Analysis · D365 ERP Command Center</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Fit-Gap Analysis</h1>
+        <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">Business Analyst</FluentBadge>
+    </div>
+</div>
+
+@if (!_ready)
+{
+    <FluentProgressRing />
+}
+else
+{
+    <div class="kpi-grid">
+        <KpiCard Label="Requirements" Value="@Fmt.Num(_reqs.Count)" Sub="Total catalogued" />
+        <KpiCard Label="Fit %" Value="@Fmt.Pct(_fitPct)" Sub="Standard + configuration" />
+        <KpiCard Label="Customizations" Value="@Fmt.Num(_custom)" Sub="Custom development" Positive="false" />
+        <KpiCard Label="ISV" Value="@Fmt.Num(_isv)" Sub="Third-party solution" />
+    </div>
+
+    <Chart Title="Fit-gap distribution" Type="doughnut" Labels="_chartLabels" Series="_chartSeries" />
+
+    <div class="page-header" style="margin-top:1.4rem;">
+        <h2 style="margin:0;">Requirements</h2>
+        <FluentButton Appearance="Appearance.Accent" OnClick="ExportCsv">Export CSV</FluentButton>
+    </div>
+    <div class="grid-wrap">
+        <FluentDataGrid Items="@_grid" Pagination="@_pagination" TGridItem="Requirement">
+            <PropertyColumn Property="@(r => r.Code)" Title="Code" Sortable="true" />
+            <PropertyColumn Property="@(r => r.Area)" Title="Area" Sortable="true" />
+            <PropertyColumn Property="@(r => r.Description)" Title="Description" />
+            <PropertyColumn Property="@(r => r.Priority)" Title="Priority" Sortable="true" />
+            <PropertyColumn Property="@(r => r.ProcessArea)" Title="Process Area" Sortable="true" />
+            <TemplateColumn Title="Fit-Gap" Sortable="true">
+                <StatusBadge Text="@context.FitGap.ToString()" Kind="@FitGapKind(context.FitGap)" />
+            </TemplateColumn>
+            <PropertyColumn Property="@(r => r.EffortDays)" Title="Effort (days)" Sortable="true" Align="Align.End" />
+        </FluentDataGrid>
+    </div>
+    <FluentPaginator State="@_pagination" />
+}
+
+@code {
+    private bool _ready;
+    private List<Requirement> _reqs = new();
+    private IQueryable<Requirement> _grid = Enumerable.Empty<Requirement>().AsQueryable();
+    private readonly PaginationState _pagination = new() { ItemsPerPage = 15 };
+
+    private decimal _fitPct;
+    private int _custom;
+    private int _isv;
+
+    private string[] _chartLabels = Array.Empty<string>();
+    private List<ChartSeries> _chartSeries = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AppData.InitializeAsync();
+        _reqs = AppData.Data.Requirements.ToList();
+        _grid = _reqs.AsQueryable();
+
+        int total = _reqs.Count;
+        int standard = _reqs.Count(r => r.FitGap == FitGap.Standard);
+        int config = _reqs.Count(r => r.FitGap == FitGap.Configuration);
+        _custom = _reqs.Count(r => r.FitGap == FitGap.Customization);
+        _isv = _reqs.Count(r => r.FitGap == FitGap.ISV);
+        _fitPct = total == 0 ? 0m : (decimal)(standard + config) / total * 100m;
+
+        _chartLabels = new[] { "Standard", "Configuration", "Customization", "ISV" };
+        _chartSeries = new List<ChartSeries>
+        {
+            new ChartSeries("Requirements", new double[] { standard, config, _custom, _isv })
+        };
+
+        _ready = true;
+    }
+
+    private static string FitGapKind(FitGap fg) => fg switch
+    {
+        FitGap.Standard => "good",
+        FitGap.Configuration => "info",
+        FitGap.Customization => "warn",
+        FitGap.ISV => "neutral",
+        _ => "neutral"
+    };
+
+    private async Task ExportCsv()
+    {
+        var headers = new[] { "Code", "Area", "Description", "Priority", "Process Area", "Fit-Gap", "Effort (days)" };
+        var rows = _reqs.Select(r => new[]
+        {
+            r.Code, r.Area, r.Description, r.Priority, r.ProcessArea, r.FitGap.ToString(), r.EffortDays.ToString()
+        });
+        var csv = Csv.Build(headers, rows);
+        await JS.InvokeVoidAsync("afcDownload", "fit-gap.csv", csv);
+    }
+}

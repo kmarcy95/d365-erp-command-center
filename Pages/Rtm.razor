@@ -1,3 +1,109 @@
 @page "/rtm"
+@inject AppData AppData
+@inject IJSRuntime JS
 <PageTitle>Requirements Traceability Matrix · D365 ERP Command Center</PageTitle>
-<Placeholder Title="Requirements Traceability Matrix" Persona="Business Analyst" Blurb="Requirement to process to design to test, with coverage." />
+
+<div class="page-header">
+    <div>
+        <h1>Requirements Traceability Matrix</h1>
+        <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">Business Analyst</FluentBadge>
+    </div>
+</div>
+
+@if (!_ready)
+{
+    <FluentProgressRing />
+}
+else
+{
+    <div class="kpi-grid">
+        <KpiCard Label="Requirements" Value="@Fmt.Num(_reqs.Count)" Sub="Total catalogued" />
+        <KpiCard Label="With Tests" Value="@Fmt.Num(_withTests)" Sub="≥ 1 linked test case" />
+        <KpiCard Label="Coverage" Value="@Fmt.Pct(_coverage)" Sub="Requirements traced to tests" />
+        <KpiCard Label="Failing" Value="@Fmt.Num(_failing)" Sub="≥ 1 failed test" Positive="false" />
+    </div>
+
+    <div class="page-header">
+        <h2 style="margin:0;">Traceability</h2>
+        <FluentButton Appearance="Appearance.Accent" OnClick="ExportCsv">Export CSV</FluentButton>
+    </div>
+    <div class="grid-wrap">
+        <FluentDataGrid Items="@_grid" Pagination="@_pagination" TGridItem="Requirement">
+            <PropertyColumn Property="@(r => r.Code)" Title="Code" Sortable="true" />
+            <PropertyColumn Property="@(r => r.Area)" Title="Area" Sortable="true" />
+            <PropertyColumn Property="@(r => r.ProcessArea)" Title="Process Area" Sortable="true" />
+            <PropertyColumn Property="@(r => r.Description)" Title="Description" />
+            <TemplateColumn Title="Fit-Gap" Sortable="true">
+                <StatusBadge Text="@context.FitGap.ToString()" Kind="@FitGapKind(context.FitGap)" />
+            </TemplateColumn>
+            <TemplateColumn Title="Test status">
+                @{
+                    var ts = TestStatusFor(context.Code);
+                }
+                <StatusBadge Text="@ts" Kind="@TestKind(ts)" />
+            </TemplateColumn>
+        </FluentDataGrid>
+    </div>
+    <FluentPaginator State="@_pagination" />
+}
+
+@code {
+    private bool _ready;
+    private List<Requirement> _reqs = new();
+    private List<TestCase> _tests = new();
+    private IQueryable<Requirement> _grid = Enumerable.Empty<Requirement>().AsQueryable();
+    private readonly PaginationState _pagination = new() { ItemsPerPage = 15 };
+
+    private int _withTests;
+    private decimal _coverage;
+    private int _failing;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AppData.InitializeAsync();
+        _reqs = AppData.Data.Requirements.ToList();
+        _tests = AppData.Data.TestCases.ToList();
+        _grid = _reqs.AsQueryable();
+
+        _withTests = _reqs.Count(r => _tests.Any(t => t.RequirementCode == r.Code));
+        _coverage = _reqs.Count == 0 ? 0m : (decimal)_withTests / _reqs.Count * 100m;
+        _failing = _reqs.Count(r => _tests.Any(t => t.RequirementCode == r.Code && t.Result == TestResult.Fail));
+        _ready = true;
+    }
+
+    private string TestStatusFor(string code)
+    {
+        var linked = _tests.Where(t => t.RequirementCode == code).ToList();
+        if (linked.Count == 0) return "Not Run";
+        if (linked.Any(t => t.Result == TestResult.Fail)) return "Fail";
+        if (linked.All(t => t.Result == TestResult.Pass)) return "Pass";
+        return "Not Run";
+    }
+
+    private static string TestKind(string status) => status switch
+    {
+        "Pass" => "good",
+        "Fail" => "bad",
+        _ => "neutral"
+    };
+
+    private static string FitGapKind(FitGap fg) => fg switch
+    {
+        FitGap.Standard => "good",
+        FitGap.Configuration => "info",
+        FitGap.Customization => "warn",
+        FitGap.ISV => "neutral",
+        _ => "neutral"
+    };
+
+    private async Task ExportCsv()
+    {
+        var headers = new[] { "Code", "Area", "Process Area", "Description", "Fit-Gap", "Test status" };
+        var rows = _reqs.Select(r => new[]
+        {
+            r.Code, r.Area, r.ProcessArea, r.Description, r.FitGap.ToString(), TestStatusFor(r.Code)
+        });
+        var csv = Csv.Build(headers, rows);
+        await JS.InvokeVoidAsync("afcDownload", "rtm.csv", csv);
+    }
+}

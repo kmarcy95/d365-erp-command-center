@@ -1,3 +1,142 @@
 @page "/roadmap"
+@inject AppData AppData
+@inject IJSRuntime JS
 <PageTitle>Roadmap and Gantt · D365 ERP Command Center</PageTitle>
-<Placeholder Title="Roadmap and Gantt" Persona="Project Manager" Blurb="Success-by-Design phases, milestones and percent complete." />
+
+<style>
+    .phase-row {
+        display: grid;
+        grid-template-columns: 1.3fr 1.7fr 3fr 1fr;
+        gap: 1rem;
+        align-items: center;
+        padding: .65rem 0;
+        border-bottom: 1px solid #eee;
+    }
+    .phase-row .phase-name { font-weight: 600; }
+    .phase-row .phase-dates { color: #605e5c; font-size: .85rem; }
+    .bar { background: #eee; border-radius: 6px; height: 14px; overflow: hidden; }
+    .bar-fill { background: #0f6cbd; height: 100%; }
+    .phase-pct { font-size: .78rem; color: #605e5c; margin-top: .25rem; }
+</style>
+
+<div class="page-header">
+    <div>
+        <h1>Roadmap and Gantt</h1>
+        <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">Project Manager</FluentBadge>
+    </div>
+</div>
+
+@if (!_ready)
+{
+    <FluentProgressRing />
+}
+else
+{
+    <div class="kpi-grid">
+        <KpiCard Label="Overall % Complete" Value="@Fmt.Pct(_overallPct)" Sub="Average across phases" />
+        <KpiCard Label="Milestones" Value="@Fmt.Num(_milestones.Count)" Sub="Total tracked" />
+        <KpiCard Label="Complete" Value="@Fmt.Num(_msComplete)" Sub="Milestones done" />
+        <KpiCard Label="At Risk" Value="@Fmt.Num(_msAtRisk)" Sub="Milestones at risk" Positive="false" />
+    </div>
+
+    <h2>Phases</h2>
+    <FluentCard Class="placeholder-card" Style="padding:1rem 1.2rem;margin-bottom:1.4rem;">
+        @foreach (var p in _phases)
+        {
+            <div class="phase-row">
+                <div class="phase-name">@p.Name</div>
+                <div class="phase-dates">@p.Start.ToString("MMM d, yyyy") – @p.End.ToString("MMM d, yyyy")</div>
+                <div>
+                    <div class="bar"><div class="bar-fill" style="width:@(p.PercentComplete)%"></div></div>
+                    <div class="phase-pct">@p.PercentComplete% complete</div>
+                </div>
+                <StatusBadge Text="@RagText(p.Rag)" Kind="@RagKind(p.Rag)" />
+            </div>
+        }
+    </FluentCard>
+
+    <div class="page-header">
+        <h2 style="margin:0;">Milestones</h2>
+        <FluentButton Appearance="Appearance.Accent" OnClick="ExportCsv">Export CSV</FluentButton>
+    </div>
+    <div class="grid-wrap">
+        <table class="afc-table">
+            <thead>
+                <tr>
+                    <th>Phase</th>
+                    <th>Milestone</th>
+                    <th>Due Date</th>
+                    <th>Owner</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var m in _milestones)
+                {
+                    <tr>
+                        <td>@m.PhaseName</td>
+                        <td>@m.Name</td>
+                        <td>@m.DueDate.ToString("MMM d, yyyy")</td>
+                        <td>@m.Owner</td>
+                        <td><StatusBadge Text="@m.Status" Kind="@MilestoneKind(m.Status)" /></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private bool _ready;
+    private List<ProjectPhase> _phases = new();
+    private List<Milestone> _milestones = new();
+    private decimal _overallPct;
+    private int _msComplete;
+    private int _msAtRisk;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AppData.InitializeAsync();
+        _phases = AppData.Data.Phases.ToList();
+        _milestones = AppData.Data.Milestones.ToList();
+        _overallPct = _phases.Count > 0 ? (decimal)_phases.Average(p => p.PercentComplete) : 0m;
+        _msComplete = _milestones.Count(m => m.Status == "Complete");
+        _msAtRisk = _milestones.Count(m => m.Status == "At Risk");
+        _ready = true;
+    }
+
+    private static string RagText(RagStatus r) => r switch
+    {
+        RagStatus.OnTrack => "On Track",
+        RagStatus.AtRisk => "At Risk",
+        RagStatus.OffTrack => "Off Track",
+        RagStatus.Complete => "Complete",
+        _ => r.ToString()
+    };
+
+    private static string RagKind(RagStatus r) => r switch
+    {
+        RagStatus.Complete => "good",
+        RagStatus.OnTrack => "info",
+        RagStatus.AtRisk => "warn",
+        RagStatus.OffTrack => "bad",
+        _ => "neutral"
+    };
+
+    private static string MilestoneKind(string status) => status switch
+    {
+        "Complete" => "good",
+        "In Progress" => "info",
+        "At Risk" => "warn",
+        "Not Started" => "neutral",
+        _ => "neutral"
+    };
+
+    private async Task ExportCsv()
+    {
+        var headers = new[] { "Phase", "Milestone", "Due Date", "Owner", "Status" };
+        var rows = _milestones.Select(m => new[] { m.PhaseName, m.Name, m.DueDate.ToString("yyyy-MM-dd"), m.Owner, m.Status });
+        var csv = Csv.Build(headers, rows);
+        await JS.InvokeVoidAsync("afcDownload", "roadmap-milestones.csv", csv);
+    }
+}

@@ -1,3 +1,109 @@
 @page "/sales-orders"
+@inject AppData AppData
+@inject IJSRuntime JS
 <PageTitle>Sales Orders · D365 ERP Command Center</PageTitle>
-<Placeholder Title="Sales Orders" Persona="D365 ERP Analyst" Blurb="Order-to-cash sales orders and fulfillment status." />
+
+<div class="page-header">
+    <div>
+        <h1>Sales Orders</h1>
+        <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">D365 ERP Analyst</FluentBadge>
+    </div>
+    <FluentButton Appearance="Appearance.Accent" OnClick="Export">Export CSV</FluentButton>
+</div>
+
+@if (!_ready)
+{
+    <FluentProgressRing />
+}
+else
+{
+    <div class="kpi-grid">
+        <KpiCard Label="Open Order Value" Value="@Fmt.Money(_openValue)" Sub="Orders not yet invoiced" />
+        <KpiCard Label="Sales Orders" Value="@Fmt.Num(_all.Count)" Sub="Total orders" />
+        <KpiCard Label="Shipped" Value="@Fmt.Num(_shipped)" Sub="Shipped or invoiced" />
+        <KpiCard Label="Customers" Value="@Fmt.Num(_customerCount)" Sub="Distinct customers" />
+    </div>
+
+    <FluentSearch @bind-Value="_search" @bind-Value:after="Apply" Placeholder="Search customer name or number…" Class="afc-search" />
+
+    <div class="grid-wrap">
+        <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="SalesOrder">
+            <PropertyColumn Property="@(o => o.Number)" Title="Number" Sortable="true" />
+            <PropertyColumn Property="@(o => o.CustomerName)" Title="Customer" Sortable="true" />
+            <PropertyColumn Property="@(o => o.Segment)" Title="Segment" Sortable="true" />
+            <PropertyColumn Property="@(o => o.OrderDate)" Title="Order Date" Sortable="true" />
+            <PropertyColumn Property="@(o => o.ShipDate)" Title="Ship Date" Sortable="true" />
+            <PropertyColumn Property="@(o => o.Total)" Format="N0" Title="Total ($)" Sortable="true" Align="Align.End" />
+            <TemplateColumn Title="Status" Sortable="false">
+                <StatusBadge Text="@context.Status.ToString()" Kind="@StatusKind(context.Status)" />
+            </TemplateColumn>
+        </FluentDataGrid>
+    </div>
+
+    <FluentPaginator State="@_pagination" />
+}
+
+@code {
+    private bool _ready;
+    private string _search = "";
+
+    private List<SalesOrder> _all = new();
+    private IQueryable<SalesOrder> _filtered = Enumerable.Empty<SalesOrder>().AsQueryable();
+    private readonly PaginationState _pagination = new() { ItemsPerPage = 15 };
+
+    private decimal _openValue;
+    private int _shipped;
+    private int _customerCount;
+
+    private static string StatusKind(SoStatus s) => s switch
+    {
+        SoStatus.Invoiced => "good",
+        SoStatus.Shipped => "info",
+        SoStatus.Picked => "warn",
+        _ => "neutral"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AppData.InitializeAsync();
+        _all = AppData.Data.SalesOrders.ToList();
+
+        _openValue = _all.Where(o => o.Status != SoStatus.Invoiced).Sum(o => o.Total);
+        _shipped = _all.Count(o => o.Status == SoStatus.Shipped || o.Status == SoStatus.Invoiced);
+        _customerCount = _all.Select(o => o.CustomerNumber).Distinct().Count();
+
+        Apply();
+        _ready = true;
+    }
+
+    private void Apply()
+    {
+        var q = _all.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            var s = _search.Trim();
+            q = q.Where(o =>
+                o.CustomerName.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                o.CustomerNumber.Contains(s, StringComparison.OrdinalIgnoreCase));
+        }
+        _filtered = q.AsQueryable();
+    }
+
+    private async Task Export()
+    {
+        var headers = new[] { "Number", "Customer Number", "Customer Name", "Segment", "Order Date", "Ship Date", "Total", "Status" };
+        var rows = _all.Select(o => new[]
+        {
+            o.Number,
+            o.CustomerNumber,
+            o.CustomerName,
+            o.Segment,
+            o.OrderDate.ToString("yyyy-MM-dd"),
+            o.ShipDate.ToString("yyyy-MM-dd"),
+            o.Total.ToString("0.##"),
+            o.Status.ToString()
+        });
+        var csv = Csv.Build(headers, rows);
+        await JS.InvokeVoidAsync("afcDownload", "sales-orders.csv", csv);
+    }
+}

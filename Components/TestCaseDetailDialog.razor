@@ -1,0 +1,85 @@
+@implements IDialogContentComponent<TestCase>
+@inject AppData AppData
+
+<div class="dlg-content">
+    <div class="dlg-facts">
+        <div><span class="dlg-fact-label">Test case</span><span>@Content.Code</span></div>
+        <div><span class="dlg-fact-label">Requirement</span><span>@Content.RequirementCode</span></div>
+        <div><span class="dlg-fact-label">Process area</span><span>@Content.ProcessArea</span></div>
+        <div><span class="dlg-fact-label">Result</span><span><StatusBadge Text="@ResultText(Content.Result)" Kind="@ResultKind(Content.Result)" /></span></div>
+        <div><span class="dlg-fact-label">Last run</span><span>@(Content.LastRun?.ToString("MMM d, yyyy") ?? "—")</span></div>
+        <div><span class="dlg-fact-label">Tester</span><span>@Content.Tester</span></div>
+        @if (!string.IsNullOrEmpty(Content.Defect))
+        {
+            <div><span class="dlg-fact-label">Defect</span><span><StatusBadge Text="@Content.Defect" Kind="bad" /></span></div>
+        }
+    </div>
+
+    <p class="dlg-sub">@Content.Title</p>
+
+    @if (_req is not null)
+    {
+        <p class="dlg-sub"><strong>Traces to:</strong> @_req.Code · @_req.Description (@_req.Area)</p>
+    }
+
+    <h4 class="dlg-section">Test steps</h4>
+    <ol class="dlg-steps">
+        @foreach (var s in Content.Steps)
+        {
+            <li>@s</li>
+        }
+    </ol>
+
+    <h4 class="dlg-section">Execution history (@Content.Runs.Count)</h4>
+    @if (Content.Runs.Count == 0)
+    {
+        <p class="dlg-sub">Not executed yet.</p>
+    }
+    else
+    {
+        <table class="afc-table dlg-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Result</th>
+                    <th>Tester</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var run in Content.Runs.OrderByDescending(r => r.Date))
+                {
+                    <tr>
+                        <td>@run.Date.ToString("MMM d, yyyy")</td>
+                        <td><StatusBadge Text="@ResultText(run.Result)" Kind="@ResultKind(run.Result)" /></td>
+                        <td>@run.Tester</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [Parameter] public TestCase Content { get; set; } = default!;
+
+    private Requirement? _req;
+
+    protected override void OnInitialized()
+    {
+        _req = AppData.Data.Requirements.FirstOrDefault(r => r.Code == Content.RequirementCode);
+    }
+
+    private static string ResultText(TestResult r) => r switch
+    {
+        TestResult.Pass => "Pass",
+        TestResult.Fail => "Fail",
+        _ => "Not Run"
+    };
+
+    private static string ResultKind(TestResult r) => r switch
+    {
+        TestResult.Pass => "good",
+        TestResult.Fail => "bad",
+        _ => "neutral"
+    };
+}

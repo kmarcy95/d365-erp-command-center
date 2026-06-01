@@ -1,0 +1,92 @@
+@implements IDialogContentComponent<Requirement>
+@inject AppData AppData
+
+<div class="dlg-content">
+    <div class="dlg-facts">
+        <div><span class="dlg-fact-label">Code</span><span>@Content.Code</span></div>
+        <div><span class="dlg-fact-label">Area</span><span>@Content.Area</span></div>
+        <div><span class="dlg-fact-label">Process area</span><span>@Content.ProcessArea</span></div>
+        <div><span class="dlg-fact-label">Priority</span><span>@Content.Priority</span></div>
+        <div><span class="dlg-fact-label">Fit-Gap</span><span><StatusBadge Text="@Content.FitGap.ToString()" Kind="@FitGapKind(Content.FitGap)" /></span></div>
+        <div><span class="dlg-fact-label">Effort</span><span>@Content.EffortDays days</span></div>
+        <div><span class="dlg-fact-label">Owner</span><span>@Content.Owner</span></div>
+        <div><span class="dlg-fact-label">Status</span><span>@Content.Status</span></div>
+    </div>
+
+    <p class="dlg-sub">@Content.Description</p>
+
+    @if (!string.IsNullOrEmpty(Content.Rationale))
+    {
+        <h4 class="dlg-section">Fit-gap rationale</h4>
+        <p class="dlg-sub">@Content.Rationale</p>
+    }
+
+    <h4 class="dlg-section">Linked test cases (@_tests.Count)</h4>
+    @if (_tests.Count == 0)
+    {
+        <p class="dlg-sub">No test cases linked to this requirement yet.</p>
+    }
+    else
+    {
+        <table class="afc-table dlg-table">
+            <thead>
+                <tr>
+                    <th>Test case</th>
+                    <th>Title</th>
+                    <th>Result</th>
+                    <th>Last run</th>
+                    <th>Tester</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var t in _tests)
+                {
+                    <tr>
+                        <td>@t.Code</td>
+                        <td>@t.Title</td>
+                        <td><StatusBadge Text="@ResultText(t.Result)" Kind="@ResultKind(t.Result)" /></td>
+                        <td>@(t.LastRun?.ToString("MMM d, yyyy") ?? "—")</td>
+                        <td>@t.Tester</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [Parameter] public Requirement Content { get; set; } = default!;
+
+    private List<TestCase> _tests = new();
+
+    protected override void OnInitialized()
+    {
+        _tests = AppData.Data.TestCases
+            .Where(t => t.RequirementCode == Content.Code)
+            .OrderBy(t => t.Code)
+            .ToList();
+    }
+
+    private static string ResultText(TestResult r) => r switch
+    {
+        TestResult.Pass => "Pass",
+        TestResult.Fail => "Fail",
+        _ => "Not Run"
+    };
+
+    private static string ResultKind(TestResult r) => r switch
+    {
+        TestResult.Pass => "good",
+        TestResult.Fail => "bad",
+        _ => "neutral"
+    };
+
+    private static string FitGapKind(FitGap fg) => fg switch
+    {
+        FitGap.Standard => "good",
+        FitGap.Configuration => "info",
+        FitGap.Customization => "warn",
+        FitGap.ISV => "neutral",
+        _ => "neutral"
+    };
+}

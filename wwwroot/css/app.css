@@ -489,3 +489,45 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible,
 .reco { padding:.7rem .9rem; border-radius:8px; background: var(--afc-accent-weak); border:1px solid #cfe3f5;
     color:#0f548c; font-size:.86rem; margin-top:.4rem; }
 .reco strong { color:#0d3f6b; }
+
+/* ============================================================
+   IMPLEMENTATION / BA-PM PAGES — depth level-up (2026-06-01)
+   ============================================================ */
+.dlg-steps { margin: .2rem 0 .4rem; padding-left: 1.2rem; color: var(--text); font-size: .9rem; }
+.dlg-steps li { margin: .25rem 0; }
+
+/* RAID heatmap: clickable cells */
+.heatmap td.cell { cursor: default; }
+.heatmap td.cell.hm-click { cursor: pointer; transition: outline .12s ease; }
+.heatmap td.cell.hm-click:hover { outline: 2px solid var(--afc-accent); outline-offset: -2px; }
+.heatmap td.cell.hm-active { outline: 2px solid var(--n-700); outline-offset: -2px; }
+
+/* Milestone progress mini-bar (Roadmap detail) */
+.ms-bar { background: var(--n-100); border-radius: 999px; height: 10px; overflow: hidden; }
+.ms-bar .ms-fill { height: 100%; background: var(--afc-accent); border-radius: 999px; }
+
+/* Process Catalog enrichment */
+.proc-summary { display:flex; flex-wrap:wrap; gap:.35rem 1.4rem; font-size:.84rem; color: var(--text-muted); margin:.1rem 0 .8rem; }
+.proc-summary b { color: var(--text); }
+.flow-step .fs-desc { font-size:.78rem; color: var(--text-muted); margin:.3rem 0; }
+.flow-step .fs-control { font-size:.72rem; color:#0f548c; background: var(--afc-accent-weak); border:1px solid #cfe3f5;
+    border-radius:6px; padding:.1rem .4rem; display:inline-block; margin-top:.2rem; }
+.flow-step .fs-cycle { font-size:.72rem; color: var(--text-muted); }
+.flow-step .fs-reqs { font-size:.7rem; color: var(--text-muted); margin-top:.25rem; }
+
+/* Home project-health band + capability map */
+.health-band { display:grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap:1rem; margin:1rem 0 1.6rem; }
+.cap-map { width:100%; border-collapse:collapse; }
+.cap-map th, .cap-map td { text-align:left; padding:.5rem .6rem; border-bottom:1px solid var(--border); font-size:.88rem; }
+.cap-map th { text-transform:uppercase; letter-spacing:.04em; font-size:.72rem; color: var(--text-muted); }
+.cap-map a { color: var(--afc-accent); text-decoration:none; font-weight:600; }
+.cap-map a:hover { text-decoration:underline; }
+
+/* About skills matrix */
+.skill-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:1rem; margin:.6rem 0 1.4rem; }
+.skill-col h4 { margin:.2rem 0 .5rem; font-size:.95rem; }
+.chip-row { display:flex; flex-wrap:wrap; gap:.4rem; }
+.skill-chip { font-size:.78rem; padding:.22rem .55rem; border-radius:999px; background: var(--n-100);
+    border:1px solid var(--border); color: var(--text); }
+.tech-chip { font-size:.78rem; padding:.22rem .55rem; border-radius:6px; background: var(--afc-accent-weak);
+    border:1px solid #cfe3f5; color:#0f548c; font-weight:600; }

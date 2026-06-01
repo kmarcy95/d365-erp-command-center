@@ -1,123 +1,327 @@
 @page "/test-management"
 @inject AppData AppData
+@inject UiState Ui
 @inject IJSRuntime JS
+@inject IDialogService DialogService
 <PageTitle>Test and UAT Management · D365 ERP Command Center</PageTitle>
+
+<div class="print-only print-header">
+    <div class="ph-co">Alamo Foods Co.</div>
+    <div class="ph-report">Test &amp; UAT Management — execution status</div>
+    <div class="ph-meta">
+        As of @AppData.Data.AsOf.ToString("MMM d, yyyy") · Environment @Ui.EnvName ·
+        Generated @DateTime.Now.ToString("MMM d, yyyy h:mm tt")
+    </div>
+</div>
 
 <div class="page-header">
     <div>
         <h1>Test and UAT Management</h1>
         <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">Business Analyst</FluentBadge>
     </div>
+    <div style="display:flex;gap:.5rem;align-items:center">
+        <FluentButton Appearance="Appearance.Stealth" OnClick="Print">🖨 Print / PDF</FluentButton>
+        <FluentButton Appearance="Appearance.Accent" OnClick="Export">⬇ Export CSV</FluentButton>
+    </div>
 </div>
 
-@if (!_ready)
+<PageMeta AsOf="@AppData.Data.AsOf" GeneratedAtUtc="@AppData.Data.GeneratedAtUtc" Module="Implementation · Test &amp; UAT" />
+
+@if (_error)
 {
-    <FluentProgressRing />
+    <ErrorBanner Message="Couldn't load test management. Use the account menu in the header to reset the demo data." />
+}
+else if (!_ready)
+{
+    <Skeleton Variant="page" />
 }
 else
 {
     <div class="kpi-grid">
-        <KpiCard Label="Test Cases" Value="@Fmt.Num(_tests.Count)" Sub="Total authored" />
-        <KpiCard Label="Passed" Value="@Fmt.Num(_passed)" Sub="Result · Pass" />
-        <KpiCard Label="Failed" Value="@Fmt.Num(_failed)" Sub="Result · Fail" Positive="false" />
-        <KpiCard Label="Pass Rate" Value="@Fmt.Pct(_passRate)" Sub="Of all test cases" />
+        <KpiCard Label="Pass Rate" Value="@Fmt.Pct(_passRate)" Sub="Of executed cases"
+                 Clickable="true" OnClick="@(() => ShowResult(TestResult.Pass, "Passed cases"))" />
+        <KpiCard Label="Execution" Value="@Fmt.Pct(_execPct)" Sub="@($"{_executed} of {_tests.Count} run")"
+                 Clickable="true" OnClick="ShowExecution" />
+        <KpiCard Label="Failed" Value="@Fmt.Num(_failed)" Sub="Result · Fail" Positive="false"
+                 Clickable="true" OnClick="@(() => ShowResult(TestResult.Fail, "Failed cases"))" />
+        <KpiCard Label="Open Defects" Value="@Fmt.Num(_defects)" Sub="Linked to failed tests" Positive="false"
+                 Clickable="true" OnClick="ShowDefects" />
     </div>
 
-    <Chart Title="Test results" Type="doughnut" Labels="_chartLabels" Series="_chartSeries" />
+    <div class="chart-grid">
+        <Chart Title="Test results" Type="doughnut" Labels="@_resultLabels" Series="@_resultSeries"
+               Hint="Click a slice to filter the table" OnLabelClick="OnResultPick" />
+        <Chart Title="By process area" Type="bar" Labels="@_areaLabels" Series="@_areaSeries"
+               Hint="Click a bar to filter by process area" OnLabelClick="OnAreaPick" />
+        <Chart Title="Execution trend (cumulative runs)" Type="line" Labels="@_trendLabels" Series="@_trendSeries" />
+    </div>
 
-    <div class="page-header" style="margin-top:1.4rem;">
-        <h2 style="margin:0;">Test Cases</h2>
-        <FluentButton Appearance="Appearance.Accent" OnClick="ExportCsv">Export CSV</FluentButton>
+    <div class="filter-bar">
+        <div class="filter-field">
+            <label>Process area</label>
+            <select value="@_area" @onchange="@(e => { _area = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All</option>
+                @foreach (var a in _areas) { <option value="@a">@a</option> }
+            </select>
+        </div>
+        <div class="filter-field">
+            <label>Result</label>
+            <select value="@_result" @onchange="@(e => { _result = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All</option>
+                <option value="Pass">Pass</option>
+                <option value="Fail">Fail</option>
+                <option value="Not Run">Not Run</option>
+            </select>
+        </div>
+        <div class="filter-field">
+            <label>Tester</label>
+            <select value="@_tester" @onchange="@(e => { _tester = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All</option>
+                @foreach (var t in _testers) { <option value="@t">@t</option> }
+            </select>
+        </div>
+        <div class="filter-field" style="flex:1 1 180px">
+            <label>Search</label>
+            <input value="@_search" @oninput="@(e => { _search = e.Value?.ToString() ?? ""; Apply(); })" placeholder="Title or code…" />
+        </div>
+        <button class="fb-reset" @onclick="ResetFilters">Reset filters</button>
     </div>
-    <FluentSearch @bind-Value="_search" @bind-Value:after="ApplyFilter" Placeholder="Search by title or code" Class="grid-search" />
-    <div class="grid-wrap">
-        <FluentDataGrid Items="@_grid" Pagination="@_pagination" TGridItem="TestCase">
-            <PropertyColumn Property="@(t => t.Code)" Title="Code" Sortable="true" />
-            <PropertyColumn Property="@(t => t.RequirementCode)" Title="Requirement" Sortable="true" />
-            <PropertyColumn Property="@(t => t.Title)" Title="Title" />
-            <PropertyColumn Property="@(t => t.ProcessArea)" Title="Process Area" Sortable="true" />
-            <TemplateColumn Title="Result" Sortable="true">
-                <StatusBadge Text="@ResultText(context.Result)" Kind="@ResultKind(context.Result)" />
-            </TemplateColumn>
-            <TemplateColumn Title="Last Run">
-                @(context.LastRun?.ToString("MMM d, yyyy") ?? "—")
-            </TemplateColumn>
-            <PropertyColumn Property="@(t => t.Tester)" Title="Tester" Sortable="true" />
-        </FluentDataGrid>
-    </div>
-    <FluentPaginator State="@_pagination" />
+
+    <p class="grid-hint">@_filteredCount of @_tests.Count test cases shown · click any case for its steps and execution history.</p>
+
+    @if (_filteredCount == 0)
+    {
+        <div class="grid-wrap">
+            <EmptyState Emoji="🧪" Title="No matching test cases"
+                        Message="No test cases match the current filters. Try clearing a filter or resetting." />
+        </div>
+    }
+    else
+    {
+        <div class="grid-wrap">
+            <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="TestCase"
+                            OnRowClick="@(async (FluentDataGridRow<TestCase> row) => await OpenCase(row.Item))"
+                            RowClass="@(_ => "grid-row-clickable")">
+                <PropertyColumn Property="@(t => t.Code)" Title="Code" Sortable="true" />
+                <PropertyColumn Property="@(t => t.RequirementCode)" Title="Requirement" Sortable="true" />
+                <PropertyColumn Property="@(t => t.Title)" Title="Title" />
+                <PropertyColumn Property="@(t => t.ProcessArea)" Title="Process" Sortable="true" />
+                <TemplateColumn Title="Result" Sortable="true">
+                    <StatusBadge Text="@ResultText(context.Result)" Kind="@ResultKind(context.Result)" />
+                </TemplateColumn>
+                <TemplateColumn Title="Last Run">@(context.LastRun?.ToString("MMM d, yyyy") ?? "—")</TemplateColumn>
+                <PropertyColumn Property="@(t => t.Tester)" Title="Tester" Sortable="true" />
+                <TemplateColumn Title="Defect">@(context.Defect ?? "")</TemplateColumn>
+            </FluentDataGrid>
+        </div>
+        <FluentPaginator State="@_pagination" />
+    }
 }
 
 @code {
     private bool _ready;
+    private bool _error;
+    private string _search = "", _area = "", _result = "", _tester = "";
+
     private List<TestCase> _tests = new();
-    private IQueryable<TestCase> _grid = Enumerable.Empty<TestCase>().AsQueryable();
+    private IQueryable<TestCase> _filtered = Enumerable.Empty<TestCase>().AsQueryable();
+    private int _filteredCount;
     private readonly PaginationState _pagination = new() { ItemsPerPage = 15 };
-    private string _search = "";
 
-    private int _passed;
-    private int _failed;
-    private decimal _passRate;
+    private int _passed, _failed, _notRun, _executed, _defects;
+    private decimal _passRate, _execPct;
 
-    private string[] _chartLabels = Array.Empty<string>();
-    private List<ChartSeries> _chartSeries = new();
+    private string[] _areas = Array.Empty<string>();
+    private string[] _testers = Array.Empty<string>();
+
+    private string[] _resultLabels = Array.Empty<string>();
+    private List<ChartSeries> _resultSeries = new();
+    private string[] _areaLabels = Array.Empty<string>();
+    private List<ChartSeries> _areaSeries = new();
+    private string[] _trendLabels = Array.Empty<string>();
+    private List<ChartSeries> _trendSeries = new();
 
     protected override async Task OnInitializedAsync()
     {
-        await AppData.InitializeAsync();
-        _tests = AppData.Data.TestCases.ToList();
-        ApplyFilter();
-
-        _passed = _tests.Count(t => t.Result == TestResult.Pass);
-        _failed = _tests.Count(t => t.Result == TestResult.Fail);
-        int notRun = _tests.Count(t => t.Result == TestResult.NotRun);
-        _passRate = _tests.Count == 0 ? 0m : (decimal)_passed / _tests.Count * 100m;
-
-        _chartLabels = new[] { "Pass", "Fail", "Not Run" };
-        _chartSeries = new List<ChartSeries>
+        try
         {
-            new ChartSeries("Test cases", new double[] { _passed, _failed, notRun })
-        };
+            await AppData.InitializeAsync();
+            _tests = AppData.Data.TestCases.ToList();
 
-        _ready = true;
+            _passed = _tests.Count(t => t.Result == TestResult.Pass);
+            _failed = _tests.Count(t => t.Result == TestResult.Fail);
+            _notRun = _tests.Count(t => t.Result == TestResult.NotRun);
+            _executed = _passed + _failed;
+            _passRate = _executed == 0 ? 0m : (decimal)_passed / _executed * 100m;
+            _execPct = _tests.Count == 0 ? 0m : (decimal)_executed / _tests.Count * 100m;
+            _defects = _tests.Count(t => !string.IsNullOrEmpty(t.Defect));
+
+            _areas = _tests.Select(t => t.ProcessArea).Distinct().OrderBy(a => a).ToArray();
+            _testers = _tests.Select(t => t.Tester).Distinct().OrderBy(t => t).ToArray();
+
+            _resultLabels = new[] { "Pass", "Fail", "Not Run" };
+            _resultSeries = new List<ChartSeries> { new ChartSeries("Test cases", new double[] { _passed, _failed, _notRun }) };
+
+            var byArea = _areas.Select(a => (double)_tests.Count(t => t.ProcessArea == a)).ToArray();
+            _areaLabels = _areas;
+            _areaSeries = new List<ChartSeries> { new ChartSeries("Test cases", byArea) };
+
+            BuildTrend();
+
+            Apply();
+            _ready = true;
+        }
+        catch
+        {
+            _error = true;
+        }
     }
 
-    private void ApplyFilter()
+    private void BuildTrend()
     {
-        IEnumerable<TestCase> q = _tests;
+        var runs = _tests.SelectMany(t => t.Runs).ToList();
+        if (runs.Count == 0) { _trendLabels = Array.Empty<string>(); _trendSeries = new(); return; }
+
+        // Group by week start (Monday), cumulative run count over time.
+        var byWeek = runs
+            .GroupBy(r => r.Date.AddDays(-((int)r.Date.DayOfWeek + 6) % 7))
+            .OrderBy(g => g.Key)
+            .ToList();
+
+        var labels = new List<string>();
+        var cumulative = new List<double>();
+        int running = 0;
+        foreach (var g in byWeek)
+        {
+            running += g.Count();
+            labels.Add(g.Key.ToString("MMM d"));
+            cumulative.Add(running);
+        }
+        _trendLabels = labels.ToArray();
+        _trendSeries = new List<ChartSeries> { new ChartSeries("Cumulative runs", cumulative.ToArray()) };
+    }
+
+    private void ResetFilters() { _search = _area = _result = _tester = ""; Apply(); }
+    private void OnResultPick(string r) { _result = _result == r ? "" : r; Apply(); }
+    private void OnAreaPick(string a) { _area = _area == a ? "" : a; Apply(); }
+
+    private void Apply()
+    {
+        var q = _tests.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(_area)) q = q.Where(t => t.ProcessArea == _area);
+        if (!string.IsNullOrWhiteSpace(_result)) q = q.Where(t => ResultText(t.Result) == _result);
+        if (!string.IsNullOrWhiteSpace(_tester)) q = q.Where(t => t.Tester == _tester);
         if (!string.IsNullOrWhiteSpace(_search))
         {
             var s = _search.Trim();
-            q = q.Where(t =>
-                t.Title.Contains(s, StringComparison.OrdinalIgnoreCase) ||
-                t.Code.Contains(s, StringComparison.OrdinalIgnoreCase));
+            q = q.Where(t => t.Title.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                             t.Code.Contains(s, StringComparison.OrdinalIgnoreCase));
         }
-        _grid = q.AsQueryable();
+        var list = q.ToList();
+        _filteredCount = list.Count;
+        _filtered = list.AsQueryable();
     }
 
     private static string ResultText(TestResult r) => r switch
     {
         TestResult.Pass => "Pass",
         TestResult.Fail => "Fail",
-        TestResult.NotRun => "Not Run",
-        _ => r.ToString()
+        _ => "Not Run"
     };
 
     private static string ResultKind(TestResult r) => r switch
     {
         TestResult.Pass => "good",
         TestResult.Fail => "bad",
-        TestResult.NotRun => "neutral",
         _ => "neutral"
     };
 
-    private async Task ExportCsv()
+    private async Task Print() => await JS.InvokeVoidAsync("afcPrint", "");
+
+    private async Task Show(ExecDrilldownDialog.Args args)
     {
-        var headers = new[] { "Code", "Requirement", "Title", "Process Area", "Result", "Last Run", "Tester" };
+        var parameters = new DialogParameters
+        {
+            Title = "Test & UAT ▸ " + args.Title,
+            Width = "720px",
+            PrimaryAction = "Close",
+            SecondaryAction = null
+        };
+        await DialogService.ShowDialogAsync<ExecDrilldownDialog>(args, parameters);
+    }
+
+    private async Task ShowResult(TestResult result, string title)
+    {
+        var rows = _tests.Where(t => t.Result == result).OrderBy(t => t.Code).ToList();
+        await Show(new ExecDrilldownDialog.Args
+        {
+            Title = title,
+            Subtitle = $"{rows.Count} cases · {_passRate:0.0}% pass rate of {_executed} executed.",
+            Kind = ExecDrilldownDialog.ChartKind.Doughnut,
+            DatasetLabel = "Test cases",
+            Labels = _resultLabels,
+            Data = new decimal[] { _passed, _failed, _notRun },
+            Headers = new[] { "Code", "Requirement", "Process", "Tester" },
+            Rows = rows.Select(t => new[] { t.Code, t.RequirementCode, t.ProcessArea, t.Tester }).ToList()
+        });
+    }
+
+    private async Task ShowExecution()
+    {
+        await Show(new ExecDrilldownDialog.Args
+        {
+            Title = "Execution progress",
+            Subtitle = $"{_executed} of {_tests.Count} cases executed ({_execPct:0.0}%); {_notRun} remaining.",
+            Kind = ExecDrilldownDialog.ChartKind.Doughnut,
+            DatasetLabel = "Test cases",
+            Labels = new[] { "Executed", "Not Run" },
+            Data = new decimal[] { _executed, _notRun },
+            Headers = new[] { "Process area", "Cases", "Executed" },
+            Rows = _areas.Select(a => new[]
+            {
+                a,
+                _tests.Count(t => t.ProcessArea == a).ToString(),
+                _tests.Count(t => t.ProcessArea == a && t.Result != TestResult.NotRun).ToString()
+            }).ToList()
+        });
+    }
+
+    private async Task ShowDefects()
+    {
+        var rows = _tests.Where(t => !string.IsNullOrEmpty(t.Defect)).OrderBy(t => t.Defect).ToList();
+        await Show(new ExecDrilldownDialog.Args
+        {
+            Title = "Open defects",
+            Subtitle = $"{rows.Count} defects linked to failed test cases.",
+            Kind = ExecDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "Defects by process",
+            Labels = _areas,
+            Data = _areas.Select(a => (decimal)_tests.Count(t => t.ProcessArea == a && !string.IsNullOrEmpty(t.Defect))).ToArray(),
+            Headers = new[] { "Defect", "Test case", "Requirement", "Process" },
+            Rows = rows.Select(t => new[] { t.Defect ?? "", t.Code, t.RequirementCode, t.ProcessArea }).ToList()
+        });
+    }
+
+    private async Task OpenCase(TestCase? t)
+    {
+        if (t is null) return;
+        var parameters = new DialogParameters
+        {
+            Title = $"Test & UAT ▸ {t.Code}",
+            Width = "720px",
+            PrimaryAction = "Close",
+            SecondaryAction = null
+        };
+        await DialogService.ShowDialogAsync<TestCaseDetailDialog>(t, parameters);
+    }
+
+    private async Task Export()
+    {
+        var headers = new[] { "Code", "Requirement", "Title", "Process Area", "Result", "Last Run", "Tester", "Defect" };
         var rows = _tests.Select(t => new[]
         {
             t.Code, t.RequirementCode, t.Title, t.ProcessArea, ResultText(t.Result),
-            t.LastRun?.ToString("yyyy-MM-dd") ?? "", t.Tester
+            t.LastRun?.ToString("yyyy-MM-dd") ?? "", t.Tester, t.Defect ?? ""
         });
         var csv = Csv.Build(headers, rows);
         await JS.InvokeVoidAsync("afcDownload", "test-cases.csv", csv);

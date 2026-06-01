@@ -1,31 +1,85 @@
 @page "/budget"
 @inject AppData AppData
+@inject UiState Ui
 @inject IJSRuntime JS
 @inject IDialogService DialogService
 <PageTitle>Budget vs Actual · D365 ERP Command Center</PageTitle>
+
+@* ---- Print-only report header (#4) ---- *@
+<div class="print-only print-header">
+    <div class="ph-co">Alamo Foods Co.</div>
+    <div class="ph-report">Budget vs Actual — @_meta.Version</div>
+    <div class="ph-meta">
+        Fiscal period @Fiscal.PeriodLabel(AppData.Data.AsOf) · Currency @AppInfo.BaseCurrency ·
+        Environment @Ui.EnvName · Generated @DateTime.Now.ToString("MMM d, yyyy h:mm tt") · Status @_meta.Status
+    </div>
+</div>
 
 <div class="page-header">
     <div>
         <h1>Budget vs Actual</h1>
         <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">D365 ERP Analyst</FluentBadge>
     </div>
-    <FluentButton Appearance="Appearance.Accent" OnClick="Export">Export CSV</FluentButton>
+    <div style="display:flex;gap:.5rem;align-items:center">
+        <div class="scale-toggle" role="group" aria-label="Display units">
+            <button class="@(_scale == MoneyScale.Units ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Units)">$</button>
+            <button class="@(_scale == MoneyScale.Thousands ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Thousands)">$K</button>
+            <button class="@(_scale == MoneyScale.Millions ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Millions)">$M</button>
+        </div>
+        <FluentButton Appearance="Appearance.Stealth" OnClick="Print">🖨 Print / PDF</FluentButton>
+        <FluentButton Appearance="Appearance.Accent" OnClick="Export">⬇ Export CSV</FluentButton>
+    </div>
 </div>
 
-@if (!_ready)
+<PageMeta AsOf="@AppData.Data.AsOf" GeneratedAtUtc="@AppData.Data.GeneratedAtUtc" Module="Budgeting" />
+
+@if (_error)
 {
-    <FluentProgressRing />
+    <ErrorBanner Message="Couldn't load the budget dataset. Use the account menu in the header to reset the demo data." />
+}
+else if (!_ready)
+{
+    <Skeleton Variant="page" />
 }
 else
 {
+    @* ---- Budget governance banner (#6) ---- *@
+    <div class="gov-banner">
+        <div class="gov-status">
+            <span class="gov-chip gc-@_meta.Status.ToLower()">@StatusIcon @_meta.Status</span>
+            <div class="gov-steps">
+                @{
+                    var steps = new[] { "Draft", "Submitted", "Approved", "Locked" };
+                    var cur = Array.IndexOf(steps, _meta.Status);
+                }
+                @for (int i = 0; i < steps.Length; i++)
+                {
+                    <span class="gs @(i < cur ? "done" : i == cur ? "current" : "")">@steps[i]</span>
+                    if (i < steps.Length - 1) { <span class="gs-arrow">›</span> }
+                }
+            </div>
+        </div>
+        <div class="gov-fact gov-version">
+            <span class="gf-l">Version</span>
+            <select value="@_meta.Version" @onchange="OnVersionChanged">
+                @foreach (var v in _meta.Versions) { <option value="@v">@v</option> }
+            </select>
+        </div>
+        <div class="gov-fact"><span class="gf-l">Scenario</span><span class="gf-v">@_meta.Scenario</span></div>
+        <div class="gov-fact"><span class="gf-l">Owner</span><span class="gf-v">@_meta.Owner</span></div>
+        <div class="gov-fact"><span class="gf-l">Approved by</span><span class="gf-v">@_meta.Approver@(_meta.ApprovedDate is { } ad ? $" · {ad:MMM d, yyyy}" : "")</span></div>
+    </div>
+
     <div class="kpi-grid">
-        <KpiCard Label="Total Budget" Value="@Fmt.Money(_totalBudget)" Sub="Across all departments"
+        <KpiCard Label="Total Budget" Value="@Fmt.Money(_totalBudget, _scale)" Sub="Across all departments"
                  Clickable="true" OnClick="ShowByDepartment" />
-        <KpiCard Label="Total Actual" Value="@Fmt.Money(_totalActual)" Sub="Spend to date"
+        <KpiCard Label="Total Actual" Value="@Fmt.Money(_totalActual, _scale)" Sub="@($"{Util(_totalActual, _totalBudget):0}% of budget utilized")"
                  Clickable="true" OnClick="ShowByCategory" />
-        <KpiCard Label="Variance" Value="@Fmt.Money(_totalVariance)" Sub="@(_totalVariance >= 0 ? "Under budget" : "Over budget")" Positive="@(_totalVariance >= 0)"
+        <KpiCard Label="Variance" Value="@Fmt.Money(_totalVariance, _scale)"
+                 Delta="@Fmt.SignedPct(_totalBudget == 0 ? 0 : _totalVariance / _totalBudget * 100)"
+                 Sub="@(_totalVariance >= 0 ? "Favorable · under budget" : "Unfavorable · over budget")" Positive="@(_totalVariance >= 0)"
                  Clickable="true" OnClick="ShowByDepartment" />
-        <KpiCard Label="Over Budget" Value="@Fmt.Num(_overCount)" Sub="Lines exceeding budget" Positive="false"
+        <KpiCard Label="Over Budget" Value="@Fmt.Num(_overCount)" Sub="@($"{_warnCount} within ±5–10% · target 0")" Positive="@(_overCount == 0)"
                  Clickable="true" OnClick="ShowOverBudget" />
     </div>
 
@@ -33,70 +87,194 @@ else
         <Chart Title="Budget vs actual by department ($)" Type="bar" Labels="@_deptLabels" Series="@_deptSeries" />
     </div>
 
-    <FluentSearch @bind-Value="_search" @bind-Value:after="Apply" Placeholder="Search department or category…" Class="afc-search" />
-
-    <p class="grid-hint">Click any line for its budget vs actual detail.</p>
-    <div class="grid-wrap">
-        <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="BudgetLine"
-                        OnRowClick="@(async (FluentDataGridRow<BudgetLine> row) => await OpenLine(row.Item))"
-                        RowClass="@(_ => "grid-row-clickable")">
-            <PropertyColumn Property="@(b => b.Department)" Title="Department" Sortable="true"
-                            IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Ascending" />
-            <PropertyColumn Property="@(b => b.Category)" Title="Category" Sortable="true" />
-            <PropertyColumn Property="@(b => b.Budget)" Format="N0" Title="Budget ($)" Sortable="true" Align="Align.End" />
-            <PropertyColumn Property="@(b => b.Actual)" Format="N0" Title="Actual ($)" Sortable="true" Align="Align.End" />
-            <PropertyColumn Property="@(b => b.Variance)" Format="N0" Title="Variance ($)" Sortable="true" Align="Align.End" />
-            <TemplateColumn Title="Status" Sortable="false">
-                <StatusBadge Text="@(context.Variance < 0 ? "Over" : "Under")" Kind="@(context.Variance < 0 ? "bad" : "good")" />
-            </TemplateColumn>
-        </FluentDataGrid>
+    @* ---- Filter bar (#7) ---- *@
+    <div class="filter-bar">
+        <div class="filter-field">
+            <label>Department</label>
+            <select value="@_dept" @onchange="@(e => { _dept = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All departments</option>
+                @foreach (var d in _departments) { <option value="@d">@d</option> }
+            </select>
+        </div>
+        <div class="filter-field">
+            <label>Category</label>
+            <select value="@_cat" @onchange="@(e => { _cat = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All categories</option>
+                @foreach (var c in _categories) { <option value="@c">@c</option> }
+            </select>
+        </div>
+        <div class="filter-field">
+            <label>Variance status</label>
+            <select value="@_varFilter" @onchange="@(e => { _varFilter = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All lines</option>
+                <option value="over">Over budget only</option>
+                <option value="exceed">Exceeds ±10% threshold</option>
+            </select>
+        </div>
+        <div class="filter-field" style="flex:1 1 200px">
+            <label>Search</label>
+            <input value="@_search" @oninput="@(e => { _search = e.Value?.ToString() ?? ""; Apply(); })" placeholder="Department or category…" />
+        </div>
+        <button class="fb-reset" @onclick="ResetFilters">Reset filters</button>
     </div>
 
-    <FluentPaginator State="@_pagination" />
+    @* ---- Threshold legend (#9) ---- *@
+    <div class="thr-legend">
+        <span class="tl"><span class="sw sw-ok"></span> On/under budget or within ±5%</span>
+        <span class="tl"><span class="sw sw-warn"></span> Over by 5–10% (watch)</span>
+        <span class="tl"><span class="sw sw-bad"></span> Over by &gt;10% (exception)</span>
+    </div>
+
+    <p class="grid-hint">@_filteredCount of @_all.Count lines shown · click any line for its budget vs actual detail.</p>
+
+    @if (_filteredCount == 0)
+    {
+        <div class="grid-wrap">
+            <EmptyState Emoji="🗂️" Title="No matching budget lines"
+                        Message="No budget lines match the current filters. Try clearing a filter or resetting." />
+        </div>
+    }
+    else
+    {
+        <div class="grid-wrap">
+            <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="BudgetLine"
+                            OnRowClick="@(async (FluentDataGridRow<BudgetLine> row) => await OpenLine(row.Item))"
+                            RowClass="@RowClass">
+                <PropertyColumn Property="@(b => b.Department)" Title="Department" Sortable="true"
+                                IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Ascending" />
+                <PropertyColumn Property="@(b => b.Category)" Title="Category" Sortable="true" />
+                <TemplateColumn Title="Budget" Sortable="true" Align="Align.End"
+                                SortBy="@(GridSort<BudgetLine>.ByAscending(b => b.Budget))">
+                    @Fmt.Money(context.Budget, _scale)
+                </TemplateColumn>
+                <TemplateColumn Title="Actual" Sortable="true" Align="Align.End"
+                                SortBy="@(GridSort<BudgetLine>.ByAscending(b => b.Actual))">
+                    @Fmt.Money(context.Actual, _scale)
+                </TemplateColumn>
+                <TemplateColumn Title="Variance" Sortable="true" Align="Align.End"
+                                SortBy="@(GridSort<BudgetLine>.ByAscending(b => b.Variance))">
+                    <span class="@(context.Variance < 0 ? "var-neg" : "var-pos")">@Fmt.Signed(context.Variance)</span>
+                </TemplateColumn>
+                <TemplateColumn Title="Var %" Sortable="true" Align="Align.End"
+                                SortBy="@(GridSort<BudgetLine>.ByAscending(b => b.VariancePct))">
+                    <span class="@(context.Variance < 0 ? "var-neg" : "var-pos")">@Fmt.SignedPct(context.VariancePct)</span>
+                </TemplateColumn>
+                <TemplateColumn Title="Utilization" Sortable="false">
+                    @{
+                        var u = Util(context.Actual, context.Budget);
+                        var ucls = u > 110 ? "u-bad" : u > 100 ? "u-warn" : "";
+                    }
+                    <div class="util-wrap">
+                        <div class="util-bar"><div class="util-fill @ucls" style="width:@(Math.Min(u, 100).ToString("0"))%"></div></div>
+                        <span style="font-size:.74rem;color:#605e5c">@u.ToString("0")%</span>
+                    </div>
+                </TemplateColumn>
+                <TemplateColumn Title="Status" Sortable="false">
+                    <StatusBadge Text="@StatusText(context)" Kind="@StatusKind(context)" />
+                </TemplateColumn>
+            </FluentDataGrid>
+        </div>
+
+        <FluentPaginator State="@_pagination" />
+    }
 }
 
 @code {
     private bool _ready;
-    private string _search = "";
+    private bool _error;
+    private MoneyScale _scale = MoneyScale.Units;
 
+    private string _search = "";
+    private string _dept = "";
+    private string _cat = "";
+    private string _varFilter = "";
+
+    private BudgetMeta _meta = new();
     private List<BudgetLine> _all = new();
+    private string[] _departments = Array.Empty<string>();
+    private string[] _categories = Array.Empty<string>();
+
     private IQueryable<BudgetLine> _filtered = Enumerable.Empty<BudgetLine>().AsQueryable();
+    private int _filteredCount;
     private readonly PaginationState _pagination = new() { ItemsPerPage = 15 };
 
     private decimal _totalBudget, _totalActual, _totalVariance;
-    private int _overCount;
+    private int _overCount, _warnCount;
 
     private string[] _deptLabels = Array.Empty<string>();
     private List<ChartSeries> _deptSeries = new();
 
+    private string StatusIcon => _meta.Status switch
+    {
+        "Approved" => "✓", "Locked" => "🔒", "Submitted" => "⏳", _ => "✎"
+    };
+
     protected override async Task OnInitializedAsync()
     {
-        await AppData.InitializeAsync();
-        _all = AppData.Data.Budget.ToList();
-
-        _totalBudget = _all.Sum(b => b.Budget);
-        _totalActual = _all.Sum(b => b.Actual);
-        _totalVariance = _totalBudget - _totalActual;
-        _overCount = _all.Count(b => b.Variance < 0);
-
-        var byDept = _all.GroupBy(b => b.Department)
-            .Select(g => new { Dept = g.Key, Budget = g.Sum(b => b.Budget), Actual = g.Sum(b => b.Actual) })
-            .OrderByDescending(g => g.Budget)
-            .ToList();
-        _deptLabels = byDept.Select(g => g.Dept).ToArray();
-        _deptSeries = new List<ChartSeries>
+        try
         {
-            new ChartSeries("Budget", byDept.Select(g => (double)g.Budget).ToArray()),
-            new ChartSeries("Actual", byDept.Select(g => (double)g.Actual).ToArray())
-        };
+            await AppData.InitializeAsync();
+            _meta = AppData.Data.BudgetMeta;
+            _all = AppData.Data.Budget.ToList();
 
+            _departments = _all.Select(b => b.Department).Distinct().OrderBy(x => x).ToArray();
+            _categories = _all.Select(b => b.Category).Distinct().OrderBy(x => x).ToArray();
+
+            _totalBudget = _all.Sum(b => b.Budget);
+            _totalActual = _all.Sum(b => b.Actual);
+            _totalVariance = _totalBudget - _totalActual;
+            _overCount = _all.Count(b => b.Variance < 0);
+            _warnCount = _all.Count(b => b.VariancePct <= -5 && b.VariancePct > -10);
+
+            var byDept = _all.GroupBy(b => b.Department)
+                .Select(g => new { Dept = g.Key, Budget = g.Sum(b => b.Budget), Actual = g.Sum(b => b.Actual) })
+                .OrderByDescending(g => g.Budget)
+                .ToList();
+            _deptLabels = byDept.Select(g => g.Dept).ToArray();
+            _deptSeries = new List<ChartSeries>
+            {
+                new ChartSeries("Budget", byDept.Select(g => (double)g.Budget).ToArray()),
+                new ChartSeries("Actual", byDept.Select(g => (double)g.Actual).ToArray())
+            };
+
+            Apply();
+            _ready = true;
+        }
+        catch
+        {
+            _error = true;
+        }
+    }
+
+    private static double Util(decimal actual, decimal budget) => budget == 0 ? 0 : (double)(actual / budget) * 100;
+
+    private string RowClass(BudgetLine b)
+    {
+        var p = b.VariancePct; // positive = under budget (favorable)
+        if (p <= -10) return "grid-row-clickable var-row-bad";
+        if (p <= -5) return "grid-row-clickable var-row-warn";
+        return "grid-row-clickable";
+    }
+
+    private static string StatusText(BudgetLine b)
+        => b.VariancePct <= -10 ? "Exception" : b.Variance < 0 ? "Over" : "Under";
+
+    private static string StatusKind(BudgetLine b)
+        => b.VariancePct <= -10 ? "bad" : b.Variance < 0 ? "warn" : "good";
+
+    private void ResetFilters()
+    {
+        _search = _dept = _cat = _varFilter = "";
         Apply();
-        _ready = true;
     }
 
     private void Apply()
     {
         var q = _all.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(_dept)) q = q.Where(b => b.Department == _dept);
+        if (!string.IsNullOrWhiteSpace(_cat)) q = q.Where(b => b.Category == _cat);
+        if (_varFilter == "over") q = q.Where(b => b.Variance < 0);
+        else if (_varFilter == "exceed") q = q.Where(b => b.VariancePct <= -10);
         if (!string.IsNullOrWhiteSpace(_search))
         {
             var s = _search.Trim();
@@ -104,16 +282,26 @@ else
                 b.Department.Contains(s, StringComparison.OrdinalIgnoreCase) ||
                 b.Category.Contains(s, StringComparison.OrdinalIgnoreCase));
         }
-        _filtered = q.AsQueryable();
+        var list = q.ToList();
+        _filteredCount = list.Count;
+        _filtered = list.AsQueryable();
     }
 
-    // ---------------- Drill-down dialogs ----------------
+    private void OnVersionChanged(ChangeEventArgs e)
+    {
+        // Demo: alternate versions are illustrative; the working dataset stays the approved plan.
+        _meta.Version = e.Value?.ToString() ?? _meta.Version;
+    }
+
+    private async Task Print() => await JS.InvokeVoidAsync("afcPrint", "");
+
+    // ---------------- Drill-down dialogs (with breadcrumb in title) ----------------
 
     private async Task Show(ExecDrilldownDialog.Args args)
     {
         var parameters = new DialogParameters
         {
-            Title = args.Title,
+            Title = "Budget vs Actual ▸ " + args.Title,
             Width = "720px",
             PrimaryAction = "Close",
             SecondaryAction = null
@@ -130,13 +318,13 @@ else
         await Show(new ExecDrilldownDialog.Args
         {
             Title = "Variance by Department",
-            Subtitle = $"{Fmt.Money(_totalBudget)} budgeted vs {Fmt.Money(_totalActual)} actual ({Fmt.Money(_totalVariance)} variance).",
+            Subtitle = $"{Fmt.Money(_totalBudget)} budgeted vs {Fmt.Money(_totalActual)} actual ({Fmt.Signed(_totalVariance)} variance).",
             Kind = ExecDrilldownDialog.ChartKind.Bar,
             DatasetLabel = "Variance ($)",
             Labels = byDept.Select(g => g.Dept).ToArray(),
             Data = byDept.Select(g => g.Budget - g.Actual).ToArray(),
             Headers = new[] { "Department", "Budget", "Actual", "Variance" },
-            Rows = byDept.Select(g => new[] { g.Dept, Fmt.Money(g.Budget), Fmt.Money(g.Actual), Fmt.Money(g.Budget - g.Actual) }).ToList()
+            Rows = byDept.Select(g => new[] { g.Dept, Fmt.Money(g.Budget), Fmt.Money(g.Actual), Fmt.Signed(g.Budget - g.Actual) }).ToList()
         });
     }
 
@@ -180,7 +368,7 @@ else
         if (line is null) return;
         var parameters = new DialogParameters
         {
-            Title = $"{line.Department} · {line.Category}",
+            Title = $"Budget vs Actual ▸ {line.Department} · {line.Category}",
             Width = "520px",
             PrimaryAction = "Close",
             SecondaryAction = null

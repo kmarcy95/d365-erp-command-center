@@ -12,9 +12,11 @@
     <FluentButton Appearance="Appearance.Accent" OnClick="Export">Export CSV</FluentButton>
 </div>
 
+<PageMeta AsOf="@AppData.Data.AsOf" GeneratedAtUtc="@AppData.Data.GeneratedAtUtc" Module="Sales &amp; marketing" />
+
 @if (!_ready)
 {
-    <FluentProgressRing />
+    <Skeleton Variant="page" />
 }
 else
 {

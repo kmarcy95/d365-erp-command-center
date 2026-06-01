@@ -8,12 +8,13 @@
         <h1>Executive Dashboard</h1>
         <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">Data Analyst</FluentBadge>
     </div>
-    <span class="page-asof">Alamo Foods Co. · as of @_asOf.ToString("MMM d, yyyy")</span>
 </div>
+
+<PageMeta AsOf="@AppData.Data.AsOf" GeneratedAtUtc="@AppData.Data.GeneratedAtUtc" Module="Executive reporting" />
 
 @if (!_ready)
 {
-    <FluentProgressRing />
+    <Skeleton Variant="page" />
 }
 else
 {
@@ -42,7 +43,6 @@ else
 
 @code {
     private bool _ready;
-    private DateOnly _asOf;
 
     private decimal _revenue, _cogs, _grossProfit, _opex, _operatingIncome, _grossMarginPct;
     private decimal _openAr, _openAp, _inventoryValue, _openSoValue;
@@ -65,7 +65,6 @@ else
     {
         await AppData.InitializeAsync();
         var d = AppData.Data;
-        _asOf = d.AsOf;
 
         // Income statement
         _revenue = Bal("4000");

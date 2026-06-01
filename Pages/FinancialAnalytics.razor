@@ -9,9 +9,11 @@
     </div>
 </div>
 
+<PageMeta AsOf="@AppData.Data.AsOf" GeneratedAtUtc="@AppData.Data.GeneratedAtUtc" Module="Financial reporting" />
+
 @if (!_ready)
 {
-    <FluentProgressRing />
+    <Skeleton Variant="page" />
 }
 else
 {

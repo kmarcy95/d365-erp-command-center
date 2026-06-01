@@ -1,20 +1,44 @@
 @page "/accounts-payable"
 @inject AppData AppData
+@inject UiState Ui
 @inject IJSRuntime JS
 @inject IDialogService DialogService
 <PageTitle>Accounts Payable · D365 ERP Command Center</PageTitle>
+
+<div class="print-only print-header">
+    <div class="ph-co">Alamo Foods Co.</div>
+    <div class="ph-report">Accounts Payable — Open Invoices &amp; Aging</div>
+    <div class="ph-meta">
+        Fiscal period @Fiscal.PeriodLabel(AppData.Data.AsOf) · Currency @AppInfo.BaseCurrency ·
+        Environment @Ui.EnvName · Generated @DateTime.Now.ToString("MMM d, yyyy h:mm tt")
+    </div>
+</div>
 
 <div class="page-header">
     <div>
         <h1>Accounts Payable</h1>
         <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">D365 ERP Analyst</FluentBadge>
     </div>
-    <FluentButton Appearance="Appearance.Accent" OnClick="Export">Export CSV</FluentButton>
+    <div style="display:flex;gap:.5rem;align-items:center">
+        <div class="scale-toggle" role="group" aria-label="Display units">
+            <button class="@(_scale == MoneyScale.Units ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Units)">$</button>
+            <button class="@(_scale == MoneyScale.Thousands ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Thousands)">$K</button>
+            <button class="@(_scale == MoneyScale.Millions ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Millions)">$M</button>
+        </div>
+        <FluentButton Appearance="Appearance.Stealth" OnClick="Print">🖨 Print / PDF</FluentButton>
+        <FluentButton Appearance="Appearance.Accent" OnClick="Export">⬇ Export CSV</FluentButton>
+    </div>
 </div>
 
-@if (!_ready)
+<PageMeta AsOf="@AppData.Data.AsOf" GeneratedAtUtc="@AppData.Data.GeneratedAtUtc" Module="Accounts payable" />
+
+@if (_error)
 {
-    <FluentProgressRing />
+    <ErrorBanner Message="Couldn't load accounts payable. Use the account menu in the header to reset the demo data." />
+}
+else if (!_ready)
+{
+    <Skeleton Variant="page" />
 }
 else
 {

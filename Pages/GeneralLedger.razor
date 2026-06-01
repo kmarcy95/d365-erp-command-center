@@ -1,29 +1,53 @@
 @page "/general-ledger"
 @inject AppData AppData
+@inject UiState Ui
 @inject IJSRuntime JS
 @inject IDialogService DialogService
 <PageTitle>General Ledger · D365 ERP Command Center</PageTitle>
+
+<div class="print-only print-header">
+    <div class="ph-co">Alamo Foods Co.</div>
+    <div class="ph-report">General Ledger — Chart of Accounts &amp; Trial Balance</div>
+    <div class="ph-meta">
+        Fiscal period @Fiscal.PeriodLabel(AppData.Data.AsOf) · Currency @AppInfo.BaseCurrency ·
+        Environment @Ui.EnvName · Generated @DateTime.Now.ToString("MMM d, yyyy h:mm tt")
+    </div>
+</div>
 
 <div class="page-header">
     <div>
         <h1>General Ledger</h1>
         <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">D365 ERP Analyst</FluentBadge>
     </div>
-    <FluentButton Appearance="Appearance.Accent" OnClick="Export">Export CSV</FluentButton>
+    <div style="display:flex;gap:.5rem;align-items:center">
+        <div class="scale-toggle" role="group" aria-label="Display units">
+            <button class="@(_scale == MoneyScale.Units ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Units)">$</button>
+            <button class="@(_scale == MoneyScale.Thousands ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Thousands)">$K</button>
+            <button class="@(_scale == MoneyScale.Millions ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Millions)">$M</button>
+        </div>
+        <FluentButton Appearance="Appearance.Stealth" OnClick="Print">🖨 Print / PDF</FluentButton>
+        <FluentButton Appearance="Appearance.Accent" OnClick="Export">⬇ Export CSV</FluentButton>
+    </div>
 </div>
 
-@if (!_ready)
+<PageMeta AsOf="@AppData.Data.AsOf" GeneratedAtUtc="@AppData.Data.GeneratedAtUtc" Module="General ledger" />
+
+@if (_error)
 {
-    <FluentProgressRing />
+    <ErrorBanner Message="Couldn't load the general ledger. Use the account menu in the header to reset the demo data." />
+}
+else if (!_ready)
+{
+    <Skeleton Variant="page" />
 }
 else
 {
     <div class="kpi-grid">
-        <KpiCard Label="Total Assets" Value="@Fmt.Money(_assets)" Sub="Asset accounts"
+        <KpiCard Label="Total Assets" Value="@Fmt.Money(_assets, _scale)" Sub="Asset accounts"
                  Clickable="true" OnClick="ShowAssets" />
-        <KpiCard Label="Total Liabilities" Value="@Fmt.Money(_liabilities)" Sub="Liability accounts"
+        <KpiCard Label="Total Liabilities" Value="@Fmt.Money(_liabilities, _scale)" Sub="Liability accounts"
                  Clickable="true" OnClick="ShowLiabilities" />
-        <KpiCard Label="Total Equity" Value="@Fmt.Money(_equity)" Sub="Equity accounts"
+        <KpiCard Label="Total Equity" Value="@Fmt.Money(_equity, _scale)" Sub="Equity accounts"
                  Clickable="true" OnClick="ShowEquity" />
         <KpiCard Label="Trial Balance" Value="@(_balanced ? "Balanced" : "Out")" Sub="Debits = Credits" Positive="@_balanced"
                  Clickable="true" OnClick="ShowTrialBalance" />
@@ -33,35 +57,74 @@ else
         <Chart Title="Balance by account type ($)" Type="doughnut" Labels="@_typeLabels" Series="@_typeSeries" />
     </div>
 
-    <FluentSearch @bind-Value="_search" @bind-Value:after="Apply" Placeholder="Search account number or name…" Class="afc-search" />
-
-    <p class="grid-hint">Click any account for its balance and recent journal entries.</p>
-    <div class="grid-wrap">
-        <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="GlAccount"
-                        OnRowClick="@(async (FluentDataGridRow<GlAccount> row) => await OpenAccount(row.Item))"
-                        RowClass="@(_ => "grid-row-clickable")">
-            <PropertyColumn Property="@(a => a.Number)" Title="Account" Sortable="true"
-                            IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Ascending" />
-            <PropertyColumn Property="@(a => a.Name)" Title="Name" Sortable="true" />
-            <PropertyColumn Property="@(a => a.Type)" Title="Type" Sortable="true" />
-            <TemplateColumn Title="Debit ($)" Align="Align.End" Sortable="false">
-                @(IsDebit(context) ? Fmt.Num(context.Balance) : "")
-            </TemplateColumn>
-            <TemplateColumn Title="Credit ($)" Align="Align.End" Sortable="false">
-                @(IsDebit(context) ? "" : Fmt.Num(context.Balance))
-            </TemplateColumn>
-        </FluentDataGrid>
+    <div class="filter-bar">
+        <div class="filter-field">
+            <label>Account type</label>
+            <select value="@_type" @onchange="@(e => { _type = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All types</option>
+                @foreach (var t in Enum.GetNames<AccountType>()) { <option value="@t">@t</option> }
+            </select>
+        </div>
+        <div class="filter-field">
+            <label>Normal balance</label>
+            <select value="@_normal" @onchange="@(e => { _normal = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All</option>
+                <option value="Debit">Debit</option>
+                <option value="Credit">Credit</option>
+            </select>
+        </div>
+        <div class="filter-field" style="flex:1 1 200px">
+            <label>Search</label>
+            <input value="@_search" @oninput="@(e => { _search = e.Value?.ToString() ?? ""; Apply(); })" placeholder="Account number or name…" />
+        </div>
+        <button class="fb-reset" @onclick="ResetFilters">Reset filters</button>
     </div>
 
-    <FluentPaginator State="@_pagination" />
+    <p class="grid-hint">@_filteredCount of @_all.Count accounts shown · click any account for its balance and recent journal entries.</p>
+
+    @if (_filteredCount == 0)
+    {
+        <div class="grid-wrap">
+            <EmptyState Emoji="🧾" Title="No matching accounts"
+                        Message="No GL accounts match the current filters. Try clearing a filter or resetting." />
+        </div>
+    }
+    else
+    {
+        <div class="grid-wrap">
+            <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="GlAccount"
+                            OnRowClick="@(async (FluentDataGridRow<GlAccount> row) => await OpenAccount(row.Item))"
+                            RowClass="@(_ => "grid-row-clickable")">
+                <PropertyColumn Property="@(a => a.Number)" Title="Account" Sortable="true"
+                                IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Ascending" />
+                <PropertyColumn Property="@(a => a.Name)" Title="Name" Sortable="true" />
+                <PropertyColumn Property="@(a => a.Type)" Title="Type" Sortable="true" />
+                <TemplateColumn Title="Debit ($)" Align="Align.End"
+                                SortBy="@(GridSort<GlAccount>.ByAscending(a => a.Balance))">
+                    @(IsDebit(context) ? Fmt.Money(context.Balance, _scale) : "")
+                </TemplateColumn>
+                <TemplateColumn Title="Credit ($)" Align="Align.End"
+                                SortBy="@(GridSort<GlAccount>.ByAscending(a => a.Balance))">
+                    @(IsDebit(context) ? "" : Fmt.Money(context.Balance, _scale))
+                </TemplateColumn>
+            </FluentDataGrid>
+        </div>
+
+        <FluentPaginator State="@_pagination" />
+    }
 }
 
 @code {
     private bool _ready;
+    private bool _error;
+    private MoneyScale _scale = MoneyScale.Units;
     private string _search = "";
+    private string _type = "";
+    private string _normal = "";
 
     private List<GlAccount> _all = new();
     private IQueryable<GlAccount> _filtered = Enumerable.Empty<GlAccount>().AsQueryable();
+    private int _filteredCount;
     private readonly PaginationState _pagination = new() { ItemsPerPage = 15 };
 
     private decimal _assets, _liabilities, _equity, _debitTotal, _creditTotal;
@@ -74,30 +137,46 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        await AppData.InitializeAsync();
-        _all = AppData.Data.GlAccounts.ToList();
+        try
+        {
+            await AppData.InitializeAsync();
+            _all = AppData.Data.GlAccounts.ToList();
 
-        _assets = _all.Where(a => a.Type == AccountType.Asset).Sum(a => a.Balance);
-        _liabilities = _all.Where(a => a.Type == AccountType.Liability).Sum(a => a.Balance);
-        _equity = _all.Where(a => a.Type == AccountType.Equity).Sum(a => a.Balance);
-        _debitTotal = _all.Where(IsDebit).Sum(a => a.Balance);
-        _creditTotal = _all.Where(a => !IsDebit(a)).Sum(a => a.Balance);
-        _balanced = Math.Abs(_debitTotal - _creditTotal) <= 1m;
+            _assets = _all.Where(a => a.Type == AccountType.Asset).Sum(a => a.Balance);
+            _liabilities = _all.Where(a => a.Type == AccountType.Liability).Sum(a => a.Balance);
+            _equity = _all.Where(a => a.Type == AccountType.Equity).Sum(a => a.Balance);
+            _debitTotal = _all.Where(IsDebit).Sum(a => a.Balance);
+            _creditTotal = _all.Where(a => !IsDebit(a)).Sum(a => a.Balance);
+            _balanced = Math.Abs(_debitTotal - _creditTotal) <= 1m;
 
-        var byType = _all.GroupBy(a => a.Type)
-            .Select(g => new { Type = g.Key, Total = g.Sum(a => Math.Abs(a.Balance)) })
-            .OrderByDescending(g => g.Total)
-            .ToList();
-        _typeLabels = byType.Select(g => g.Type.ToString()).ToArray();
-        _typeSeries = new List<ChartSeries> { new ChartSeries("Balance", byType.Select(g => (double)g.Total).ToArray()) };
+            var byType = _all.GroupBy(a => a.Type)
+                .Select(g => new { Type = g.Key, Total = g.Sum(a => Math.Abs(a.Balance)) })
+                .OrderByDescending(g => g.Total)
+                .ToList();
+            _typeLabels = byType.Select(g => g.Type.ToString()).ToArray();
+            _typeSeries = new List<ChartSeries> { new ChartSeries("Balance", byType.Select(g => (double)g.Total).ToArray()) };
 
+            Apply();
+            _ready = true;
+        }
+        catch
+        {
+            _error = true;
+        }
+    }
+
+    private void ResetFilters()
+    {
+        _search = _type = _normal = "";
         Apply();
-        _ready = true;
     }
 
     private void Apply()
     {
         var q = _all.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(_type)) q = q.Where(a => a.Type.ToString() == _type);
+        if (_normal == "Debit") q = q.Where(IsDebit);
+        else if (_normal == "Credit") q = q.Where(a => !IsDebit(a));
         if (!string.IsNullOrWhiteSpace(_search))
         {
             var s = _search.Trim();
@@ -105,16 +184,20 @@ else
                 a.Number.Contains(s, StringComparison.OrdinalIgnoreCase) ||
                 a.Name.Contains(s, StringComparison.OrdinalIgnoreCase));
         }
-        _filtered = q.AsQueryable();
+        var list = q.ToList();
+        _filteredCount = list.Count;
+        _filtered = list.AsQueryable();
     }
 
-    // ---------------- Drill-down dialogs ----------------
+    private async Task Print() => await JS.InvokeVoidAsync("afcPrint", "");
+
+    // ---------------- Drill-down dialogs (with breadcrumb in title) ----------------
 
     private async Task Show(ExecDrilldownDialog.Args args)
     {
         var parameters = new DialogParameters
         {
-            Title = args.Title,
+            Title = "General Ledger ▸ " + args.Title,
             Width = "720px",
             PrimaryAction = "Close",
             SecondaryAction = null
@@ -166,7 +249,7 @@ else
         if (a is null) return;
         var parameters = new DialogParameters
         {
-            Title = $"{a.Number} · {a.Name}",
+            Title = $"General Ledger ▸ {a.Number} · {a.Name}",
             Width = "640px",
             PrimaryAction = "Close",
             SecondaryAction = null

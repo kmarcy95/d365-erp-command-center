@@ -1,5 +1,8 @@
 @inherits LayoutComponentBase
 @inject AppData AppData
+@inject UiState Ui
+@inject IDialogService DialogService
+@implements IDisposable
 
 <FluentDesignTheme @bind-Mode="@_mode" StorageName="afc-theme" />
 
@@ -13,10 +16,65 @@
             </div>
         </div>
         <FluentSpacer />
-        <FluentBadge Appearance="Appearance.Neutral" Class="env-badge">DEMO · UAT</FluentBadge>
+
+        @* Click-catcher: dismisses either header menu on an outside click. *@
+        @if (_envOpen || _userOpen)
+        {
+            <div class="menu-scrim" @onclick="CloseMenus"></div>
+        }
+
+        @* ---- Environment switcher (#1) ---- *@
+        <div class="env-switch">
+            <button class="env-pill env-@Ui.EnvCss" @onclick="ToggleEnvMenu" title="Switch environment">
+                <span class="env-dot"></span>@Ui.EnvShort<span class="env-caret">▼</span>
+            </button>
+            @if (_envOpen)
+            {
+                <div class="env-menu">
+                    <div class="env-menu-head">Environment</div>
+                    @foreach (var env in _envs)
+                    {
+                        <button class="env-opt @(env.Val == Ui.Environment ? "is-active" : "")" @onclick="@(() => SelectEnv(env.Val))">
+                            <span class="env-dot dot-@env.Css"></span>
+                            <span style="display:flex;flex-direction:column">
+                                <span class="env-opt-name">@env.Name</span>
+                                <span class="env-opt-sub">@env.Sub</span>
+                            </span>
+                            @if (env.Val == Ui.Environment) { <span class="env-check">✓</span> }
+                        </button>
+                    }
+                </div>
+            }
+        </div>
+
         <FluentButton Appearance="Appearance.Stealth" Title="Search pages (Ctrl+K)" OnClick="OpenPalette">🔍 Search <span class="kbd">Ctrl K</span></FluentButton>
-        <FluentButton Appearance="Appearance.Stealth" Title="Reset demo data" OnClick="ResetData">↺ Reset data</FluentButton>
         <FluentButton Appearance="Appearance.Stealth" Title="Toggle light / dark" OnClick="ToggleTheme">@(_mode == DesignThemeModes.Light ? "🌙" : "☀️")</FluentButton>
+
+        @* ---- User identity + audit trail (#5) ---- *@
+        <div class="env-switch">
+            <button class="user-btn" @onclick="ToggleUserMenu" title="Account">
+                <span class="user-avatar">@Ui.UserInitials</span>
+                <span class="user-meta">
+                    <span class="user-name">@Ui.UserName</span>
+                    <span class="user-role">@Ui.UserRole</span>
+                </span>
+            </button>
+            @if (_userOpen)
+            {
+                <div class="env-menu user-menu">
+                    <div class="env-menu-head">Signed in as</div>
+                    <button class="env-opt" disabled style="cursor:default">
+                        <span class="user-avatar" style="width:34px;height:34px">@Ui.UserInitials</span>
+                        <span style="display:flex;flex-direction:column">
+                            <span class="env-opt-name" style="color:#242424">@Ui.UserName</span>
+                            <span class="env-opt-sub">@Ui.UserRole · Alamo Foods Co.</span>
+                        </span>
+                    </button>
+                    <button class="env-opt" @onclick="ShowAudit"><span>🧾</span><span class="env-opt-name">Activity &amp; audit log</span></button>
+                    <button class="env-opt" @onclick="ResetData"><span>↺</span><span class="env-opt-name">Reset demo data</span></button>
+                </div>
+            }
+        </div>
     </FluentHeader>
 
     <FluentStack Orientation="Orientation.Horizontal" Width="100%" Class="app-body" VerticalAlignment="VerticalAlignment.Stretch">
@@ -28,8 +86,21 @@
         </FluentBodyContent>
     </FluentStack>
 
+    @* ---- Footer chrome (#10) ---- *@
     <FluentFooter Class="app-footer">
-        <span>Portfolio demo · built with Blazor WebAssembly &amp; Fluent UI</span>
+        <div class="foot-meta">
+            <span><span class="foot-key">Build</span> v@AppInfo.Version (@AppInfo.Build)</span>
+            <span class="foot-sep">·</span>
+            <span><span class="foot-key">Env</span> @Ui.EnvName</span>
+            <span class="foot-sep">·</span>
+            <span><span class="foot-key">Period</span> @Fiscal.Period(AppData.Data.AsOf)</span>
+            <span class="foot-sep">·</span>
+            <span><span class="foot-key">Currency</span> @AppInfo.BaseCurrency</span>
+            <span class="foot-sep">·</span>
+            <span>@AppInfo.Platform data model</span>
+            <span class="foot-sep">·</span>
+            <button class="foot-link" @onclick="ShowHelpDialog">Keyboard shortcuts (?)</button>
+        </div>
         <FluentSpacer />
         <FluentAnchor Href="https://kmarcy95.github.io/Business-Landing-Page/" Target="_blank" Appearance="Appearance.Hypertext">Keystone Marcy</FluentAnchor>
     </FluentFooter>
@@ -40,10 +111,52 @@
 @code {
     private DesignThemeModes _mode = DesignThemeModes.Light;
     private CommandPalette? _palette;
+    private bool _envOpen, _userOpen;
+    private DotNetObjectReference<MainLayout>? _selfRef;
 
-    protected override async Task OnInitializedAsync() => await AppData.InitializeAsync();
+    private record EnvOpt(AppEnvironment Val, string Name, string Sub, string Css);
+    private readonly EnvOpt[] _envs =
+    {
+        new(AppEnvironment.Production, "Production", "Live company data", "prod"),
+        new(AppEnvironment.Sandbox, "Sandbox · UAT", "Test & training (this demo)", "uat"),
+        new(AppEnvironment.Development, "Development", "Config & build", "dev"),
+    };
 
-    private async Task ResetData() => await AppData.ResetDemoDataAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        await AppData.InitializeAsync();
+        await Ui.InitializeAsync();
+        Ui.Changed += OnChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _selfRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("afcHelp.register", _selfRef);
+        }
+    }
+
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    private void ToggleEnvMenu() { _envOpen = !_envOpen; _userOpen = false; }
+    private void ToggleUserMenu() { _userOpen = !_userOpen; _envOpen = false; }
+    private void CloseMenus() { _envOpen = false; _userOpen = false; }
+
+    private async Task SelectEnv(AppEnvironment env)
+    {
+        _envOpen = false;
+        await Ui.SetEnvironmentAsync(env);
+    }
+
+    private async Task ResetData()
+    {
+        _userOpen = false;
+        await AppData.ResetDemoDataAsync();
+    }
 
     private async Task OpenPalette()
     {
@@ -52,4 +165,26 @@
 
     private void ToggleTheme()
         => _mode = _mode == DesignThemeModes.Light ? DesignThemeModes.Dark : DesignThemeModes.Light;
+
+    private async Task ShowAudit()
+    {
+        _userOpen = false;
+        var parameters = new DialogParameters { Title = "Activity & Audit Log", Width = "820px", PrimaryAction = "Close", SecondaryAction = null };
+        await DialogService.ShowDialogAsync<AuditLogDialog>(AppData.Data.AuditLog, parameters);
+    }
+
+    private async Task ShowHelpDialog()
+    {
+        var parameters = new DialogParameters { Title = "Keyboard Shortcuts", Width = "460px", PrimaryAction = "Close", SecondaryAction = null };
+        await DialogService.ShowDialogAsync<ShortcutsHelpDialog>("", parameters);
+    }
+
+    [JSInvokable]
+    public Task ShowHelp() => InvokeAsync(ShowHelpDialog);
+
+    public void Dispose()
+    {
+        Ui.Changed -= OnChanged;
+        _selfRef?.Dispose();
+    }
 }

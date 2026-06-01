@@ -36,6 +36,45 @@ window.afcPalette = (function () {
     return { register, focus };
 })();
 
+// "?" opens the keyboard-shortcuts help (ignored while typing in a field).
+window.afcHelp = (function () {
+    let dotnet = null;
+    function register(ref) {
+        dotnet = ref;
+        document.addEventListener('keydown', onKey);
+    }
+    function isEditable(el) {
+        if (!el) return false;
+        const tag = el.tagName ? el.tagName.toLowerCase() : '';
+        // Native fields, contentEditable, or any custom element (e.g. <fluent-search>)
+        // whose real input lives in shadow DOM — a hyphen in the tag marks a web component.
+        return tag === 'input' || tag === 'textarea' || tag === 'select'
+            || el.isContentEditable === true || tag.indexOf('-') > -1;
+    }
+    function onKey(e) {
+        if (e.key !== '?' || e.ctrlKey || e.metaKey || e.altKey) return;
+        // composedPath() pierces shadow roots, so a Fluent field reports its inner input.
+        const path = typeof e.composedPath === 'function' ? e.composedPath() : [e.target];
+        if (path.some(isEditable)) return;
+        e.preventDefault();
+        if (dotnet) dotnet.invokeMethodAsync('ShowHelp');
+    }
+    return { register };
+})();
+
+// Print / "Save as PDF" — the browser print dialog renders the print stylesheet
+// (report header shown, app chrome hidden). Optional body class scopes which
+// report header is visible during the print.
+window.afcPrint = function (reportClass) {
+    var added = false;
+    if (reportClass) { document.body.classList.add(reportClass); added = true; }
+    window.print();
+    if (added) {
+        // remove on the next tick so the print engine has captured the layout
+        setTimeout(function () { document.body.classList.remove(reportClass); }, 500);
+    }
+};
+
 // CSV download helper used by the data-grid pages.
 window.afcDownload = function (filename, text) {
     const blob = new Blob([text], { type: 'text/csv;charset=utf-8;' });

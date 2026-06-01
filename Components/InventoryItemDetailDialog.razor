@@ -6,25 +6,64 @@
         <div><span class="dlg-fact-label">Name</span><span>@Content.Name</span></div>
         <div><span class="dlg-fact-label">Category</span><span>@Content.Category</span></div>
         <div><span class="dlg-fact-label">Warehouse</span><span>@Content.WarehouseCode</span></div>
-        <div><span class="dlg-fact-label">Stock</span><span><StatusBadge Text="@(Content.BelowReorder ? "Below reorder" : "OK")" Kind="@(Content.BelowReorder ? "bad" : "good")" /></span></div>
+        <div><span class="dlg-fact-label">ABC class</span><span><span class="abc-chip abc-@Content.AbcClass">@Content.AbcClass</span></span></div>
+        <div><span class="dlg-fact-label">Stock health</span><span><StatusBadge Text="@Content.State.ToString()" Kind="@StateKind" /></span></div>
     </div>
 
     <h4 class="dlg-section">Stock Position</h4>
+    <div class="stockbar">
+        <div class="sb-fill @FillClass" style="width:@(FillPct)%"></div>
+        <div class="sb-mark" style="left:@(MarkPct(Content.SafetyStock))%" title="Safety stock"></div>
+        <div class="sb-mark" style="left:@(MarkPct(Content.ReorderPoint))%" title="Reorder point"></div>
+    </div>
+    <div class="stockbar-legend">
+        <span>On hand <strong>@Fmt.Num(Content.OnHand)</strong></span>
+        <span>│ Safety <strong>@Fmt.Num(Content.SafetyStock)</strong></span>
+        <span>│ Reorder <strong>@Fmt.Num(Content.ReorderPoint)</strong></span>
+        <span>│ Days of supply <strong>@(Content.DaysOfSupply >= 999 ? "∞" : Content.DaysOfSupply.ToString("0"))</strong></span>
+    </div>
+
+    <div class="reco">
+        @if (Content.SuggestedReorderQty > 0)
+        {
+            <text>📦 <strong>Replenish:</strong> order <strong>@Fmt.Num(Content.SuggestedReorderQty)</strong> units
+            (≈ @Fmt.Money(Content.SuggestedReorderQty * Content.UnitCost)) to return to reorder + safety.
+            At @Content.AvgDailyUsage.ToString("0.0")/day with a @Content.LeadTimeDays-day lead time, current cover is
+            @(Content.DaysOfSupply >= 999 ? "effectively unlimited" : $"{Content.DaysOfSupply:0} days").</text>
+        }
+        else if (Content.State == StockState.Excess)
+        {
+            <text>🟦 <strong>Excess:</strong> @Content.DaysOfSupply.ToString("0") days of supply on hand (> 120). Consider slowing
+            replenishment or promoting — @Fmt.Money(Content.Value) is tied up in this SKU.</text>
+        }
+        else
+        {
+            <text>✅ <strong>Healthy:</strong> stock is above reorder point with @Content.DaysOfSupply.ToString("0") days of cover. No action needed.</text>
+        }
+    </div>
+
+    <h4 class="dlg-section">Planning Parameters</h4>
     <table class="afc-table dlg-table">
         <tbody>
-            <tr><td>On hand</td><td class="num">@Fmt.Num(Content.OnHand)</td></tr>
+            <tr><td>Average daily usage</td><td class="num">@Content.AvgDailyUsage.ToString("0.0") / day</td></tr>
+            <tr><td>Lead time</td><td class="num">@Content.LeadTimeDays days</td></tr>
+            <tr><td>Safety stock</td><td class="num">@Fmt.Num(Content.SafetyStock)</td></tr>
             <tr><td>Reorder point</td><td class="num">@Fmt.Num(Content.ReorderPoint)</td></tr>
-            <tr><td>Cover vs. reorder</td><td class="num">@CoverText</td></tr>
+            <tr><td>Suggested order qty</td><td class="num">@(Content.SuggestedReorderQty > 0 ? Fmt.Num(Content.SuggestedReorderQty) : "—")</td></tr>
+            <tr><td>Last counted</td><td class="num">@Content.LastCount.ToString("MMM d, yyyy")</td></tr>
         </tbody>
     </table>
 
-    <h4 class="dlg-section">Unit Economics</h4>
+    <h4 class="dlg-section">Valuation & Throughput</h4>
     <table class="afc-table dlg-table">
         <tbody>
             <tr><td>Unit cost</td><td class="num">@Fmt.Money1(Content.UnitCost)</td></tr>
             <tr><td>Unit price</td><td class="num">@Fmt.Money1(Content.UnitPrice)</td></tr>
-            <tr><td>Unit margin</td><td class="num">@Fmt.Money1(Content.UnitPrice - Content.UnitCost) (@MarginPctText)</td></tr>
-            <tr class="total"><td>On-hand value (cost)</td><td class="num">@Fmt.Money(Content.Value)</td></tr>
+            <tr><td>Unit margin</td><td class="num">@Fmt.Money1(Content.Margin) (@Fmt.Pct(Content.MarginPct))</td></tr>
+            <tr><td>On-hand value (cost)</td><td class="num">@Fmt.Money(Content.Value)</td></tr>
+            <tr><td>On-hand value (retail)</td><td class="num">@Fmt.Money(Content.RetailValue)</td></tr>
+            <tr><td>Annualised usage (cost)</td><td class="num">@Fmt.Money(Content.AnnualUsageValue)</td></tr>
+            <tr class="total"><td>Inventory turns</td><td class="num">@Content.Turns.ToString("0.0")× / yr</td></tr>
         </tbody>
     </table>
 </div>
@@ -32,11 +71,23 @@
 @code {
     [Parameter] public InventoryItem Content { get; set; } = default!;
 
-    private string CoverText => Content.ReorderPoint > 0
-        ? (Content.OnHand / (double)Content.ReorderPoint).ToString("0.0") + "×"
-        : "—";
+    private string StateKind => Content.State switch
+    {
+        StockState.Stockout => "bad",
+        StockState.Critical => "bad",
+        StockState.Low => "warn",
+        StockState.Excess => "info",
+        _ => "good"
+    };
 
-    private string MarginPctText => Content.UnitPrice > 0
-        ? ((Content.UnitPrice - Content.UnitCost) / Content.UnitPrice).ToString("P0", System.Globalization.CultureInfo.InvariantCulture)
-        : "—";
+    // Bar scales to reorder + safety + 60% headroom so healthy/excess read clearly.
+    private double Target => Math.Max(1, Content.ReorderPoint + Content.SafetyStock) * 1.6;
+    private double FillPct => Math.Min(100, Content.OnHand / Target * 100);
+    private double MarkPct(int v) => Math.Min(100, v / Target * 100);
+    private string FillClass => Content.State switch
+    {
+        StockState.Stockout or StockState.Critical => "s-bad",
+        StockState.Low => "s-warn",
+        _ => "s-good"
+    };
 }

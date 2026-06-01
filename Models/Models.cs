@@ -129,6 +129,8 @@ public class Warehouse
     public string Location { get; set; } = "";
 }
 
+public enum StockState { Stockout, Critical, Low, Healthy, Excess }
+
 public class InventoryItem
 {
     public string Sku { get; set; } = "";
@@ -139,8 +141,36 @@ public class InventoryItem
     public int ReorderPoint { get; set; }
     public decimal UnitCost { get; set; }
     public decimal UnitPrice { get; set; }
-    public decimal Value => OnHand * UnitCost;
+
+    // Planning inputs (seeded)
+    public double AvgDailyUsage { get; set; }        // units consumed/shipped per day
+    public int LeadTimeDays { get; set; }            // replenishment lead time
+    public int SafetyStock { get; set; }             // buffer below which stock is critical
+    public DateOnly LastCount { get; set; }          // last physical/cycle count
+
+    public string AbcClass { get; set; } = "";       // assigned by the page (value ranking)
+
+    public decimal Value => OnHand * UnitCost;        // on-hand at cost
+    public decimal RetailValue => OnHand * UnitPrice;
+    public decimal Margin => UnitPrice - UnitCost;
+    public decimal MarginPct => UnitPrice == 0 ? 0 : Math.Round(Margin / UnitPrice * 100, 1);
     public bool BelowReorder => OnHand < ReorderPoint;
+
+    /// <summary>How many days the current on-hand will last at average usage.</summary>
+    public double DaysOfSupply => AvgDailyUsage <= 0 ? (OnHand > 0 ? 999 : 0) : Math.Round(OnHand / AvgDailyUsage, 1);
+    /// <summary>Annualised consumption at cost — basis for turns and ABC ranking.</summary>
+    public decimal AnnualUsageValue => Math.Round((decimal)(AvgDailyUsage * 365) * UnitCost, 2);
+    /// <summary>Approximate inventory turns (annual usage value ÷ on-hand value).</summary>
+    public double Turns => Value <= 0 ? 0 : Math.Round((double)(AnnualUsageValue / Value), 1);
+    /// <summary>Suggested replenishment to bring stock back to reorder + safety.</summary>
+    public int SuggestedReorderQty => Math.Max(0, ReorderPoint + SafetyStock - OnHand);
+
+    public StockState State =>
+        OnHand <= 0 ? StockState.Stockout :
+        OnHand < SafetyStock ? StockState.Critical :
+        OnHand < ReorderPoint ? StockState.Low :
+        DaysOfSupply > 120 ? StockState.Excess :
+        StockState.Healthy;
 }
 
 public enum PoStatus { Draft, Submitted, Approved, Received }

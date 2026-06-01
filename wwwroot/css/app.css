@@ -468,3 +468,22 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible,
 
 /* ---- Hero (home) refinement ---- */
 .hero { border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
+
+/* ---- ABC classification chip (Inventory) ---- */
+.abc-chip { display:inline-block; min-width:20px; height:20px; line-height:20px; padding:0 5px; text-align:center;
+    border-radius:6px; font-size:.72rem; font-weight:700; }
+.abc-A { background: var(--afc-accent); color:#fff; }
+.abc-B { background:#cfe3f5; color:#0f548c; }
+.abc-C { background:#eef1f5; color:#64748b; }
+
+/* ---- Stock-position bar (Inventory item detail) ---- */
+.stockbar { position: relative; height: 14px; border-radius: 999px; background: var(--n-100); overflow: hidden; margin: .4rem 0; }
+.stockbar .sb-fill { height: 100%; border-radius: 999px; }
+.stockbar .sb-fill.s-good { background: #16a34a; }
+.stockbar .sb-fill.s-warn { background: #d9a400; }
+.stockbar .sb-fill.s-bad { background: #d13438; }
+.stockbar .sb-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--n-600); }
+.stockbar-legend { display:flex; flex-wrap:wrap; gap:.3rem 1rem; font-size:.72rem; color: var(--text-muted); }
+.reco { padding:.7rem .9rem; border-radius:8px; background: var(--afc-accent-weak); border:1px solid #cfe3f5;
+    color:#0f548c; font-size:.86rem; margin-top:.4rem; }
+.reco strong { color:#0d3f6b; }

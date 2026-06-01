@@ -152,16 +152,29 @@ public static class SeedData
                 var noun = ItemNouns[n % ItemNouns.Length];
                 var cat = ItemCategories[n % ItemCategories.Length];
                 var cost = Money(2, 24);
+
+                // Planning inputs, then derive a coherent reorder point = lead-time demand + safety.
+                double usage = Math.Round(Rng.Next(2, 60) + Rng.NextDouble(), 1);
+                int lead = Rng.Next(3, 22);
+                int safety = (int)Math.Round(usage * Rng.Next(2, 8));
+                int reorder = (int)Math.Round(usage * lead) + safety;
+                // Spread on-hand so we get stockouts, lows, healthy and excess across the catalog.
+                int onHand = (int)Math.Round(reorder * (0.0 + Rng.NextDouble() * 4.2));
+
                 d.Inventory.Add(new InventoryItem
                 {
                     Sku = $"FG{4000 + n}",
                     Name = $"{noun} {(n % 3 == 0 ? "Family" : n % 3 == 1 ? "Case" : "Single")}",
                     Category = cat,
                     WarehouseCode = wh.Code,
-                    OnHand = Rng.Next(0, 4200),
-                    ReorderPoint = Rng.Next(250, 900),
+                    OnHand = onHand,
+                    ReorderPoint = reorder,
                     UnitCost = cost,
-                    UnitPrice = Math.Round(cost * (decimal)(1.45 + Rng.NextDouble() * 0.5), 2)
+                    UnitPrice = Math.Round(cost * (decimal)(1.45 + Rng.NextDouble() * 0.5), 2),
+                    AvgDailyUsage = usage,
+                    LeadTimeDays = lead,
+                    SafetyStock = safety,
+                    LastCount = AsOf.AddDays(-Rng.Next(1, 95))
                 });
                 n++;
             }

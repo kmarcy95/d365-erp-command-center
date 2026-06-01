@@ -43,18 +43,23 @@ else if (!_ready)
 else
 {
     <div class="kpi-grid">
-        <KpiCard Label="Inventory Value" Value="@Fmt.Money(_totalValue, _scale)" Sub="On-hand × unit cost"
+        <KpiCard Label="Inventory Value" Value="@Fmt.Money(_totalValue, _scale)" Sub="@($"{_all.Count} SKUs on hand")"
                  Clickable="true" OnClick="ShowValueByCategory" />
-        <KpiCard Label="SKUs" Value="@Fmt.Num(_all.Count)" Sub="Distinct items"
-                 Clickable="true" OnClick="ShowSkuMix" />
-        <KpiCard Label="Below Reorder" Value="@Fmt.Num(_belowReorder)" Sub="Need replenishment" Positive="@(_belowReorder == 0)"
-                 Clickable="true" OnClick="ShowBelowReorder" />
-        <KpiCard Label="Warehouses" Value="@Fmt.Num(_warehouseCount)" Sub="Stocking locations"
-                 Clickable="true" OnClick="ShowByWarehouse" />
+        <KpiCard Label="Replenish Now" Value="@Fmt.Num(_replenishCount)" Sub="@($"~{Fmt.Money(_replenishValue, _scale)} suggested order")" Positive="@(_replenishCount == 0)"
+                 Clickable="true" OnClick="ShowReplenish" />
+        <KpiCard Label="Stockout Risk" Value="@Fmt.Num(_stockoutRisk)" Sub="Stocked out or below safety" Positive="@(_stockoutRisk == 0)"
+                 Clickable="true" OnClick="ShowStockoutRisk" />
+        <KpiCard Label="Excess / Obsolete" Value="@Fmt.Money(_excessValue, _scale)" Sub="@($"{_excessCount} SKUs > 120 days supply")" Positive="false"
+                 Clickable="true" OnClick="ShowExcess" />
+        <KpiCard Label="Avg Days of Supply" Value="@($"{_avgDaysOfSupply:0} days")" Sub="Weighted cover at avg usage"
+                 Clickable="true" OnClick="ShowDaysOfSupply" />
+        <KpiCard Label="Inventory Turns" Value="@($"{_turns:0.0}×")" Sub="Annualised usage ÷ on-hand"
+                 Clickable="true" OnClick="ShowTurns" />
     </div>
 
     <div class="chart-grid">
-        <Chart Title="Inventory value by category" Type="doughnut" Labels="@_categoryLabels" Series="@_categorySeries" />
+        <Chart Title="Inventory value by category ($)" Type="doughnut" Labels="@_categoryLabels" Series="@_categorySeries" />
+        <Chart Title="SKUs by stock health" Type="bar" Labels="@_stateLabels" Series="@_stateSeries" />
     </div>
 
     <div class="filter-bar">
@@ -73,14 +78,22 @@ else
             </select>
         </div>
         <div class="filter-field">
-            <label>Stock status</label>
+            <label>Stock health</label>
             <select value="@_stock" @onchange="@(e => { _stock = e.Value?.ToString() ?? ""; Apply(); })">
-                <option value="">All</option>
-                <option value="below">Below reorder only</option>
-                <option value="ok">In stock only</option>
+                <option value="">All states</option>
+                @foreach (var st in Enum.GetNames<StockState>()) { <option value="@st">@st</option> }
             </select>
         </div>
-        <div class="filter-field" style="flex:1 1 180px">
+        <div class="filter-field">
+            <label>ABC class</label>
+            <select value="@_abc" @onchange="@(e => { _abc = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All classes</option>
+                <option value="A">A — top 80% value</option>
+                <option value="B">B — next 15%</option>
+                <option value="C">C — last 5%</option>
+            </select>
+        </div>
+        <div class="filter-field" style="flex:1 1 160px">
             <label>Search</label>
             <input value="@_search" @oninput="@(e => { _search = e.Value?.ToString() ?? ""; Apply(); })" placeholder="Name or SKU…" />
         </div>
@@ -88,10 +101,12 @@ else
     </div>
 
     <div class="thr-legend">
-        <span class="tl"><span class="sw sw-bad"></span> On-hand below reorder point (replenish)</span>
+        <span class="tl"><span class="sw sw-bad"></span> Stockout / critical (≤ safety stock)</span>
+        <span class="tl"><span class="sw sw-warn"></span> Low — below reorder point</span>
+        <span class="tl"><span class="sw" style="background:#e5f1fb"></span> Excess — &gt; 120 days supply</span>
     </div>
 
-    <p class="grid-hint">@_filteredCount of @_all.Count SKUs shown · click any row for the item’s stock position and unit economics.</p>
+    <p class="grid-hint">@_filteredCount of @_all.Count SKUs shown · click any row for stock position, planning parameters &amp; a replenishment recommendation.</p>
 
     @if (_filteredCount == 0)
     {
@@ -106,22 +121,29 @@ else
             <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="InventoryItem"
                             OnRowClick="@(async (FluentDataGridRow<InventoryItem> row) => await OpenItem(row.Item))"
                             RowClass="@RowClass">
-                <PropertyColumn Property="@(i => i.Sku)" Title="Sku" Sortable="true" />
+                <PropertyColumn Property="@(i => i.Sku)" Title="SKU" Sortable="true" />
                 <PropertyColumn Property="@(i => i.Name)" Title="Name" Sortable="true" />
                 <PropertyColumn Property="@(i => i.Category)" Title="Category" Sortable="true" />
-                <PropertyColumn Property="@(i => i.WarehouseCode)" Title="Warehouse" Sortable="true" />
-                <PropertyColumn Property="@(i => i.OnHand)" Format="N0" Title="OnHand" Sortable="true" Align="Align.End" />
-                <PropertyColumn Property="@(i => i.ReorderPoint)" Format="N0" Title="ReorderPoint" Sortable="true" Align="Align.End" />
-                <TemplateColumn Title="Unit Cost ($)" Align="Align.End"
-                                SortBy="@(GridSort<InventoryItem>.ByAscending(i => i.UnitCost))">
-                    @Fmt.Money(context.UnitCost, _scale)
+                <TemplateColumn Title="ABC" Sortable="true" Align="Align.Center"
+                                SortBy="@(GridSort<InventoryItem>.ByAscending(i => i.AbcClass))">
+                    <span class="abc-chip abc-@context.AbcClass">@context.AbcClass</span>
+                </TemplateColumn>
+                <PropertyColumn Property="@(i => i.OnHand)" Format="N0" Title="On hand" Sortable="true" Align="Align.End" />
+                <PropertyColumn Property="@(i => i.ReorderPoint)" Format="N0" Title="Reorder pt" Sortable="true" Align="Align.End" />
+                <TemplateColumn Title="Days supply" Align="Align.End"
+                                SortBy="@(GridSort<InventoryItem>.ByAscending(i => i.DaysOfSupply))">
+                    @(context.DaysOfSupply >= 999 ? "∞" : context.DaysOfSupply.ToString("0"))
+                </TemplateColumn>
+                <TemplateColumn Title="Suggest order" Align="Align.End"
+                                SortBy="@(GridSort<InventoryItem>.ByAscending(i => i.SuggestedReorderQty))">
+                    @(context.SuggestedReorderQty > 0 ? Fmt.Num(context.SuggestedReorderQty) : "—")
                 </TemplateColumn>
                 <TemplateColumn Title="Value ($)" Align="Align.End"
                                 SortBy="@(GridSort<InventoryItem>.ByAscending(i => i.Value))">
                     @Fmt.Money(context.Value, _scale)
                 </TemplateColumn>
-                <TemplateColumn Title="Stock" Sortable="false">
-                    <StatusBadge Text="@(context.BelowReorder ? "Below reorder" : "OK")" Kind="@(context.BelowReorder ? "bad" : "good")" />
+                <TemplateColumn Title="Stock health" Sortable="false">
+                    <StatusBadge Text="@context.State.ToString()" Kind="@StateKind(context.State)" />
                 </TemplateColumn>
             </FluentDataGrid>
         </div>
@@ -138,6 +160,7 @@ else
     private string _category = "";
     private string _warehouse = "";
     private string _stock = "";
+    private string _abc = "";
 
     private List<InventoryItem> _all = new();
     private IQueryable<InventoryItem> _filtered = Enumerable.Empty<InventoryItem>().AsQueryable();
@@ -145,13 +168,30 @@ else
     private readonly PaginationState _pagination = new() { ItemsPerPage = 15 };
 
     private decimal _totalValue;
-    private int _belowReorder;
-    private int _warehouseCount;
+    private int _replenishCount;
+    private decimal _replenishValue;
+    private int _stockoutRisk;
+    private int _excessCount;
+    private decimal _excessValue;
+    private double _avgDaysOfSupply;
+    private double _turns;
     private string[] _categories = Array.Empty<string>();
     private string[] _warehouses = Array.Empty<string>();
 
     private string[] _categoryLabels = Array.Empty<string>();
     private List<ChartSeries> _categorySeries = new();
+    private static readonly StockState[] StateOrder = { StockState.Stockout, StockState.Critical, StockState.Low, StockState.Healthy, StockState.Excess };
+    private string[] _stateLabels = Array.Empty<string>();
+    private List<ChartSeries> _stateSeries = new();
+
+    private static string StateKind(StockState s) => s switch
+    {
+        StockState.Stockout => "bad",
+        StockState.Critical => "bad",
+        StockState.Low => "warn",
+        StockState.Excess => "info",
+        _ => "good"
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -160,9 +200,26 @@ else
             await AppData.InitializeAsync();
             _all = AppData.Data.Inventory.ToList();
 
+            // ABC classification by annualised usage value (cumulative 80 / 95 / 100).
+            decimal totalUsage = _all.Sum(i => i.AnnualUsageValue);
+            decimal cum = 0m;
+            foreach (var i in _all.OrderByDescending(x => x.AnnualUsageValue))
+            {
+                cum += i.AnnualUsageValue;
+                var pct = totalUsage == 0 ? 0 : cum / totalUsage * 100;
+                i.AbcClass = pct <= 80 ? "A" : pct <= 95 ? "B" : "C";
+            }
+
             _totalValue = _all.Sum(i => i.Value);
-            _belowReorder = _all.Count(i => i.BelowReorder);
-            _warehouseCount = AppData.Data.Warehouses.Count;
+            _replenishCount = _all.Count(i => i.SuggestedReorderQty > 0);
+            _replenishValue = _all.Sum(i => i.SuggestedReorderQty * i.UnitCost);
+            _stockoutRisk = _all.Count(i => i.State is StockState.Stockout or StockState.Critical);
+            var excess = _all.Where(i => i.State == StockState.Excess).ToList();
+            _excessCount = excess.Count;
+            _excessValue = excess.Sum(i => i.Value);
+            _avgDaysOfSupply = _all.Count == 0 ? 0 : _all.Average(i => Math.Min(i.DaysOfSupply, 365));
+            _turns = _totalValue <= 0 ? 0 : (double)(_all.Sum(i => i.AnnualUsageValue) / _totalValue);
+
             _categories = _all.Select(i => i.Category).Distinct().OrderBy(x => x).ToArray();
             _warehouses = _all.Select(i => i.WarehouseCode).Distinct().OrderBy(x => x).ToArray();
 
@@ -177,6 +234,12 @@ else
                 new ChartSeries("Value", byCategory.Select(g => (double)g.Value).ToArray())
             };
 
+            _stateLabels = StateOrder.Select(s => s.ToString()).ToArray();
+            _stateSeries = new List<ChartSeries>
+            {
+                new ChartSeries("SKUs", StateOrder.Select(s => (double)_all.Count(i => i.State == s)).ToArray())
+            };
+
             Apply();
             _ready = true;
         }
@@ -186,12 +249,16 @@ else
         }
     }
 
-    private string RowClass(InventoryItem i)
-        => i.BelowReorder ? "grid-row-clickable var-row-bad" : "grid-row-clickable";
+    private string RowClass(InventoryItem i) => i.State switch
+    {
+        StockState.Stockout or StockState.Critical => "grid-row-clickable var-row-bad",
+        StockState.Low => "grid-row-clickable var-row-warn",
+        _ => "grid-row-clickable"
+    };
 
     private void ResetFilters()
     {
-        _search = _category = _warehouse = _stock = "";
+        _search = _category = _warehouse = _stock = _abc = "";
         Apply();
     }
 
@@ -200,8 +267,8 @@ else
         var q = _all.AsEnumerable();
         if (!string.IsNullOrWhiteSpace(_category)) q = q.Where(i => i.Category == _category);
         if (!string.IsNullOrWhiteSpace(_warehouse)) q = q.Where(i => i.WarehouseCode == _warehouse);
-        if (_stock == "below") q = q.Where(i => i.BelowReorder);
-        else if (_stock == "ok") q = q.Where(i => !i.BelowReorder);
+        if (!string.IsNullOrWhiteSpace(_stock)) q = q.Where(i => i.State.ToString() == _stock);
+        if (!string.IsNullOrWhiteSpace(_abc)) q = q.Where(i => i.AbcClass == _abc);
         if (!string.IsNullOrWhiteSpace(_search))
         {
             var s = _search.Trim();
@@ -249,57 +316,91 @@ else
         });
     }
 
-    private async Task ShowSkuMix()
+    private async Task ShowReplenish()
     {
-        var groups = _all.GroupBy(i => i.Category)
-            .OrderByDescending(g => g.Count())
-            .ToList();
-        await ShowDrilldown(new InventoryDrilldownDialog.Args
-        {
-            Title = "SKU Mix by Category",
-            Subtitle = $"{_all.Count} distinct SKUs across {groups.Count} categories.",
-            Items = _all,
-            Kind = InventoryDrilldownDialog.ChartKind.Doughnut,
-            DatasetLabel = "SKUs",
-            Labels = groups.Select(g => g.Key).ToArray(),
-            Data = groups.Select(g => (decimal)g.Count()).ToArray()
-        });
-    }
-
-    private async Task ShowBelowReorder()
-    {
-        var items = _all.Where(i => i.BelowReorder).ToList();
+        var items = _all.Where(i => i.SuggestedReorderQty > 0).OrderByDescending(i => i.SuggestedReorderQty * i.UnitCost).ToList();
         var groups = items.GroupBy(i => i.Category)
-            .OrderByDescending(g => g.Count())
-            .ToList();
+            .Select(g => new { Cat = g.Key, Cost = g.Sum(i => i.SuggestedReorderQty * i.UnitCost) })
+            .OrderByDescending(g => g.Cost).ToList();
         await ShowDrilldown(new InventoryDrilldownDialog.Args
         {
-            Title = "Items Below Reorder Point",
-            Subtitle = $"{items.Count} SKUs need replenishment, by category.",
+            Title = "Replenishment Recommendation",
+            Subtitle = $"{items.Count} SKUs below reorder + safety — suggested order ≈ {Fmt.Money(_replenishValue)}, by category.",
             Items = items,
             Kind = InventoryDrilldownDialog.ChartKind.Bar,
-            DatasetLabel = "SKUs below reorder",
-            Labels = groups.Select(g => g.Key).ToArray(),
-            Data = groups.Select(g => (decimal)g.Count()).ToArray()
+            DatasetLabel = "Suggested order ($)",
+            Labels = groups.Select(g => g.Cat).ToArray(),
+            Data = groups.Select(g => g.Cost).ToArray(),
+            MoneyAxis = true
         });
     }
 
-    private async Task ShowByWarehouse()
+    private async Task ShowStockoutRisk()
     {
-        var groups = _all.GroupBy(i => i.WarehouseCode)
-            .Select(g => new { Warehouse = g.Key, Value = g.Sum(i => i.Value) })
-            .OrderByDescending(g => g.Value)
-            .ToList();
+        var items = _all.Where(i => i.State is StockState.Stockout or StockState.Critical).OrderBy(i => i.DaysOfSupply).ToList();
+        var byCat = items.GroupBy(i => i.Category).OrderByDescending(g => g.Count()).ToList();
         await ShowDrilldown(new InventoryDrilldownDialog.Args
         {
-            Title = "Inventory Value by Warehouse",
-            Subtitle = $"{_warehouseCount} stocking locations holding {Fmt.Money(_totalValue)}.",
+            Title = "Stockout & Critical-Stock Risk",
+            Subtitle = $"{items.Count} SKUs are stocked out or at/below safety stock — by category.",
+            Items = items,
+            Kind = InventoryDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "At-risk SKUs",
+            Labels = byCat.Select(g => g.Key).ToArray(),
+            Data = byCat.Select(g => (decimal)g.Count()).ToArray()
+        });
+    }
+
+    private async Task ShowExcess()
+    {
+        var items = _all.Where(i => i.State == StockState.Excess).OrderByDescending(i => i.Value).ToList();
+        var byCat = items.GroupBy(i => i.Category)
+            .Select(g => new { Cat = g.Key, Value = g.Sum(i => i.Value) })
+            .OrderByDescending(g => g.Value).ToList();
+        await ShowDrilldown(new InventoryDrilldownDialog.Args
+        {
+            Title = "Excess / Obsolete Stock",
+            Subtitle = $"{_excessCount} SKUs hold > 120 days of supply, tying up {Fmt.Money(_excessValue)} — by category.",
+            Items = items,
+            Kind = InventoryDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "Excess value ($)",
+            Labels = byCat.Select(g => g.Cat).ToArray(),
+            Data = byCat.Select(g => g.Value).ToArray(),
+            MoneyAxis = true
+        });
+    }
+
+    private async Task ShowDaysOfSupply()
+    {
+        var byCat = _all.GroupBy(i => i.Category)
+            .Select(g => new { Cat = g.Key, Days = g.Average(i => Math.Min(i.DaysOfSupply, 365)) })
+            .OrderByDescending(g => g.Days).ToList();
+        await ShowDrilldown(new InventoryDrilldownDialog.Args
+        {
+            Title = "Days of Supply by Category",
+            Subtitle = $"Weighted average cover is ~{_avgDaysOfSupply:0} days at current usage rates.",
             Items = _all,
             Kind = InventoryDrilldownDialog.ChartKind.Bar,
-            DatasetLabel = "Value ($)",
-            Labels = groups.Select(g => g.Warehouse).ToArray(),
-            Data = groups.Select(g => g.Value).ToArray(),
-            MoneyAxis = true
+            DatasetLabel = "Avg days of supply",
+            Labels = byCat.Select(g => g.Cat).ToArray(),
+            Data = byCat.Select(g => (decimal)Math.Round(g.Days, 0)).ToArray()
+        });
+    }
+
+    private async Task ShowTurns()
+    {
+        var byCat = _all.GroupBy(i => i.Category)
+            .Select(g => new { Cat = g.Key, Turns = g.Sum(i => i.AnnualUsageValue) / (g.Sum(i => i.Value) == 0 ? 1 : g.Sum(i => i.Value)) })
+            .OrderByDescending(g => g.Turns).ToList();
+        await ShowDrilldown(new InventoryDrilldownDialog.Args
+        {
+            Title = "Inventory Turns by Category",
+            Subtitle = $"Portfolio turns ≈ {_turns:0.0}× per year (annualised usage ÷ on-hand value).",
+            Items = _all,
+            Kind = InventoryDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "Turns (×/yr)",
+            Labels = byCat.Select(g => g.Cat).ToArray(),
+            Data = byCat.Select(g => Math.Round(g.Turns, 1)).ToArray()
         });
     }
 
@@ -309,7 +410,7 @@ else
         var parameters = new DialogParameters
         {
             Title = $"Inventory ▸ {item.Sku} · {item.Name}",
-            Width = "560px",
+            Width = "640px",
             PrimaryAction = "Close",
             SecondaryAction = null
         };
@@ -318,19 +419,28 @@ else
 
     private async Task Export()
     {
-        var headers = new[] { "Sku", "Name", "Category", "Warehouse", "OnHand", "ReorderPoint", "UnitCost", "UnitPrice", "Value", "BelowReorder" };
+        var headers = new[] { "Sku", "Name", "Category", "Warehouse", "AbcClass", "OnHand", "ReorderPoint", "SafetyStock",
+            "AvgDailyUsage", "LeadTimeDays", "DaysOfSupply", "SuggestedReorderQty", "UnitCost", "UnitPrice", "Value", "AnnualUsageValue", "Turns", "StockState" };
         var rows = _all.Select(i => new[]
         {
             i.Sku,
             i.Name,
             i.Category,
             i.WarehouseCode,
+            i.AbcClass,
             i.OnHand.ToString(),
             i.ReorderPoint.ToString(),
+            i.SafetyStock.ToString(),
+            i.AvgDailyUsage.ToString("0.0"),
+            i.LeadTimeDays.ToString(),
+            i.DaysOfSupply.ToString("0.0"),
+            i.SuggestedReorderQty.ToString(),
             i.UnitCost.ToString("0.##"),
             i.UnitPrice.ToString("0.##"),
             i.Value.ToString("0.##"),
-            i.BelowReorder ? "Yes" : "No"
+            i.AnnualUsageValue.ToString("0.##"),
+            i.Turns.ToString("0.0"),
+            i.State.ToString()
         });
         var csv = Csv.Build(headers, rows);
         await JS.InvokeVoidAsync("afcDownload", "inventory.csv", csv);

@@ -56,6 +56,14 @@ else
                  Clickable="true" OnClick="ShowSalesOrders" />
     </div>
 
+    <h2 class="section-title" style="margin-top:1.4rem">Delivery health</h2>
+    <div class="kpi-grid">
+        <KpiCard Label="Delivery Status" Value="@RagLabel(_rag)" Sub="Implementation RAG" Positive="@(_rag is RagStatus.OnTrack or RagStatus.Complete)" />
+        <KpiCard Label="% Complete" Value="@Fmt.Pct(_overallPct)" Sub="Duration-weighted" />
+        <KpiCard Label="Go-Live" Value="@_goLive" Sub="Countdown to cutover" />
+        <KpiCard Label="Open High Risks" Value="@Fmt.Num(_highRisks)" Sub="RAID · severity High" Positive="false" />
+    </div>
+
     <div class="chart-grid">
         <Chart Title="Income statement ($)" Type="bar" Labels="@_incomeLabels" Series="@_incomeSeries" />
         <Chart Title="AR vs AP outstanding by aging bucket ($)" Type="bar" Labels="@_agingLabels" Series="@_agingSeries" />
@@ -72,6 +80,11 @@ else
     private decimal _revenue, _cogs, _grossProfit, _opex, _operatingIncome, _grossMarginPct;
     private decimal _openAr, _openAp, _inventoryValue, _openSoValue;
     private int _openSoCount;
+
+    private RagStatus _rag;
+    private decimal _overallPct;
+    private int _highRisks;
+    private string _goLive = "—";
 
     private static readonly string[] BucketOrder = { "Current", "1-30", "31-60", "61-90", "90+" };
 
@@ -136,6 +149,22 @@ else
         _soLabels = soByStatus.Select(g => g.Key.ToString()).ToArray();
         _soSeries = new List<ChartSeries> { new ChartSeries("Orders", soByStatus.Select(g => (double)g.Count()).ToArray()) };
 
+        // Delivery-health snapshot (cross-module tie-in to the implementation pages)
+        var phases = d.Phases.ToList();
+        double totalDays = phases.Sum(p => Math.Max(1, p.End.DayNumber - p.Start.DayNumber));
+        _overallPct = totalDays <= 0 ? 0m
+            : (decimal)(phases.Sum(p => (p.End.DayNumber - p.Start.DayNumber) * (double)p.PercentComplete) / totalDays);
+        _highRisks = d.Raid.Count(r => r.Severity == "High" && r.Status != "Closed");
+        if (phases.Any(p => p.Rag == RagStatus.OffTrack) || _highRisks > 0) _rag = RagStatus.OffTrack;
+        else if (phases.Any(p => p.Rag == RagStatus.AtRisk)) _rag = RagStatus.AtRisk;
+        else _rag = RagStatus.OnTrack;
+        var goLive = d.Milestones.FirstOrDefault(m => m.Name.Contains("Go-live", StringComparison.OrdinalIgnoreCase) && !m.Name.Contains("readiness", StringComparison.OrdinalIgnoreCase));
+        if (goLive is not null)
+        {
+            int days = goLive.DueDate.DayNumber - d.AsOf.DayNumber;
+            _goLive = days > 0 ? $"{days} days" : "Live";
+        }
+
         _ready = true;
       }
       catch
@@ -145,6 +174,15 @@ else
     }
 
     private async Task Print() => await JS.InvokeVoidAsync("afcPrint", "");
+
+    private static string RagLabel(RagStatus r) => r switch
+    {
+        RagStatus.OnTrack => "On Track",
+        RagStatus.AtRisk => "At Risk",
+        RagStatus.OffTrack => "Off Track",
+        RagStatus.Complete => "Complete",
+        _ => r.ToString()
+    };
 
     // ---------------- Drill-down dialogs (with breadcrumb in title) ----------------
 

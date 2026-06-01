@@ -1,0 +1,42 @@
+@implements IDialogContentComponent<Milestone>
+
+<div class="dlg-content">
+    <div class="dlg-facts">
+        <div><span class="dlg-fact-label">Phase</span><span>@Content.PhaseName</span></div>
+        <div><span class="dlg-fact-label">Due date</span><span>@Content.DueDate.ToString("MMM d, yyyy")</span></div>
+        <div><span class="dlg-fact-label">Owner</span><span>@Content.Owner</span></div>
+        <div><span class="dlg-fact-label">Status</span><span><StatusBadge Text="@Content.Status" Kind="@MilestoneKind(Content.Status)" /></span></div>
+    </div>
+
+    <h4 class="dlg-section">Progress</h4>
+    <div class="ms-bar"><div class="ms-fill" style="width:@(Content.PercentComplete)%"></div></div>
+    <p class="dlg-sub">@Content.PercentComplete% complete — @Content.Health</p>
+
+    <h4 class="dlg-section">Key deliverables (@Content.Deliverables.Count)</h4>
+    @if (Content.Deliverables.Count == 0)
+    {
+        <p class="dlg-sub">No deliverables recorded.</p>
+    }
+    else
+    {
+        <ul class="dlg-steps">
+            @foreach (var dlv in Content.Deliverables)
+            {
+                <li>@dlv</li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    [Parameter] public Milestone Content { get; set; } = default!;
+
+    private static string MilestoneKind(string status) => status switch
+    {
+        "Complete" => "good",
+        "In Progress" => "info",
+        "At Risk" => "warn",
+        "Not Started" => "neutral",
+        _ => "neutral"
+    };
+}

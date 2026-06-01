@@ -1,5 +1,6 @@
 @page "/status-reports"
 @inject AppData AppData
+@inject UiState Ui
 @inject IJSRuntime JS
 <PageTitle>Status Reports · D365 ERP Command Center</PageTitle>
 
@@ -8,24 +9,42 @@
     .report-section h2 { margin: 0 0 .6rem; font-size: 1.15rem; }
     .report-card { padding: 1.1rem 1.3rem; }
     .report-list { margin: 0; padding: 0; list-style: none; }
-    .report-list li { display: flex; justify-content: space-between; gap: 1rem; padding: .45rem 0; border-bottom: 1px solid #eee; }
+    .report-list li { display: flex; justify-content: space-between; gap: 1rem; padding: .45rem 0; border-bottom: 1px solid var(--border); }
     .report-list li:last-child { border-bottom: none; }
-    .report-meta { color: #605e5c; font-size: .85rem; }
+    .report-meta { color: var(--text-muted); font-size: .85rem; }
     .rag-banner { display: flex; align-items: center; gap: 1rem; padding: 1.2rem 1.4rem; border-radius: 12px; margin-bottom: 1.4rem; }
     .rag-banner h2 { margin: 0; font-size: 1.3rem; }
 </style>
+
+<div class="print-only print-header">
+    <div class="ph-co">Alamo Foods Co.</div>
+    <div class="ph-report">Executive Status Report — D365 F&amp;O implementation</div>
+    <div class="ph-meta">
+        As of @AppData.Data.AsOf.ToString("MMM d, yyyy") · Environment @Ui.EnvName ·
+        Generated @DateTime.Now.ToString("MMM d, yyyy h:mm tt")
+    </div>
+</div>
 
 <div class="page-header">
     <div>
         <h1>Status Reports</h1>
         <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">Project Manager</FluentBadge>
     </div>
-    <FluentButton Appearance="Appearance.Accent" OnClick="CopyReport">Copy report</FluentButton>
+    <div style="display:flex;gap:.5rem;align-items:center">
+        <FluentButton Appearance="Appearance.Stealth" OnClick="Print">🖨 Print / PDF</FluentButton>
+        <FluentButton Appearance="Appearance.Accent" OnClick="CopyReport">Copy report</FluentButton>
+    </div>
 </div>
 
-@if (!_ready)
+<PageMeta AsOf="@AppData.Data.AsOf" GeneratedAtUtc="@AppData.Data.GeneratedAtUtc" Module="Implementation · Status" />
+
+@if (_error)
 {
-    <FluentProgressRing />
+    <ErrorBanner Message="Couldn't build the status report. Use the account menu in the header to reset the demo data." />
+}
+else if (!_ready)
+{
+    <Skeleton Variant="page" />
 }
 else
 {
@@ -33,19 +52,46 @@ else
         <StatusBadge Text="@RagLabel(_overallRag)" Kind="@RagKind(_overallRag)" />
         <div>
             <h2>Overall: @RagLabel(_overallRag)</h2>
-            <div class="report-meta">@AppData.Data.CompanyName · @Fmt.Pct(_overallPct) complete · as of @_asOf.ToString("MMM d, yyyy")</div>
+            <div class="report-meta">@AppData.Data.CompanyName · @Fmt.Pct(_overallPct) complete · @_goLiveCountdown · as of @_asOf.ToString("MMM d, yyyy")</div>
         </div>
     </FluentCard>
 
     <div class="kpi-grid">
-        <KpiCard Label="Overall % Complete" Value="@Fmt.Pct(_overallPct)" Sub="Average across phases" />
-        <KpiCard Label="Open Risks" Value="@Fmt.Num(_openRisks)" Sub="Not closed" Positive="false" />
-        <KpiCard Label="Test Pass Rate" Value="@Fmt.Pct(_passRate)" Sub="Of all test cases" />
+        <KpiCard Label="Overall % Complete" Value="@Fmt.Pct(_overallPct)" Sub="Duration-weighted" />
+        <KpiCard Label="Open Risks" Value="@Fmt.Num(_openRisks)" Sub="@($"{_highRisks} high severity")" Positive="false" />
+        <KpiCard Label="Test Pass Rate" Value="@Fmt.Pct(_passRate)" Sub="Of executed cases" />
         <KpiCard Label="AR Outstanding" Value="@Fmt.Money(_arTotal)" Sub="Open receivables" />
     </div>
 
+    <div class="chart-grid">
+        <Chart Title="Milestone status" Type="doughnut" Labels="@_statusLabels" Series="@_statusSeries" />
+        <Chart Title="% complete by phase" Type="bar" Labels="@_phaseLabels" Series="@_phaseSeries" />
+    </div>
+
     <div class="report-section">
-        <h2>Upcoming Milestones</h2>
+        <h2>Accomplishments since last report</h2>
+        <FluentCard Class="report-card">
+            @if (_accomplishments.Count == 0)
+            {
+                <p class="report-meta">No milestones completed in the last 45 days.</p>
+            }
+            else
+            {
+                <ul class="report-list">
+                    @foreach (var m in _accomplishments)
+                    {
+                        <li>
+                            <span><strong>✓ @m.Name</strong> <span class="report-meta">· @m.PhaseName · @m.Owner</span></span>
+                            <span class="report-meta">@m.DueDate.ToString("MMM d, yyyy")</span>
+                        </li>
+                    }
+                </ul>
+            }
+        </FluentCard>
+    </div>
+
+    <div class="report-section">
+        <h2>Focus for next period</h2>
         <FluentCard Class="report-card">
             @if (_upcoming.Count == 0)
             {
@@ -70,7 +116,7 @@ else
     </div>
 
     <div class="report-section">
-        <h2>Top Open Risks</h2>
+        <h2>Top open risks</h2>
         <FluentCard Class="report-card">
             @if (_topRisks.Count == 0)
             {
@@ -82,7 +128,7 @@ else
                     @foreach (var r in _topRisks)
                     {
                         <li>
-                            <span><strong>@r.Id</strong> @r.Title <span class="report-meta">· @r.Owner</span></span>
+                            <span><strong>@r.Id</strong> @r.Title <span class="report-meta">· @r.Owner · target @(r.TargetDate?.ToString("MMM d") ?? "—")</span></span>
                             <span>
                                 <span class="report-meta">Score @r.Score</span>
                                 <StatusBadge Text="@r.Severity" Kind="@SeverityKind(r.Severity)" />
@@ -95,7 +141,7 @@ else
     </div>
 
     <div class="report-section">
-        <h2>Finance Snapshot</h2>
+        <h2>Finance snapshot</h2>
         <FluentCard Class="report-card">
             <ul class="report-list">
                 <li><span>Accounts Receivable outstanding (open)</span><span>@Fmt.Money(_arTotal)</span></li>
@@ -107,57 +153,96 @@ else
 
 @code {
     private bool _ready;
+    private bool _error;
     private DateOnly _asOf;
     private RagStatus _overallRag;
     private decimal _overallPct;
-    private int _openRisks;
+    private int _openRisks, _highRisks;
     private decimal _passRate;
-    private decimal _arTotal;
-    private decimal _apTotal;
+    private decimal _arTotal, _apTotal;
+    private string _goLiveCountdown = "";
     private List<Milestone> _upcoming = new();
+    private List<Milestone> _accomplishments = new();
     private List<RaidEntry> _topRisks = new();
+
+    private string[] _statusLabels = Array.Empty<string>();
+    private List<ChartSeries> _statusSeries = new();
+    private string[] _phaseLabels = Array.Empty<string>();
+    private List<ChartSeries> _phaseSeries = new();
 
     protected override async Task OnInitializedAsync()
     {
-        await AppData.InitializeAsync();
-        var d = AppData.Data;
-        _asOf = d.AsOf;
+        try
+        {
+            await AppData.InitializeAsync();
+            var d = AppData.Data;
+            _asOf = d.AsOf;
 
-        var phases = d.Phases.ToList();
-        _overallPct = phases.Count > 0 ? (decimal)phases.Average(p => p.PercentComplete) : 0m;
+            var phases = d.Phases.ToList();
+            double totalDays = phases.Sum(p => Math.Max(1, p.End.DayNumber - p.Start.DayNumber));
+            _overallPct = totalDays <= 0 ? 0m
+                : (decimal)(phases.Sum(p => (p.End.DayNumber - p.Start.DayNumber) * (double)p.PercentComplete) / totalDays);
 
-        var risks = d.Raid.Where(r => r.Type == RaidType.Risk).ToList();
-        _openRisks = d.Raid.Count(r => r.Type == RaidType.Risk && r.Status != "Closed");
-        bool anyHighOpenRisk = risks.Any(r => r.Status != "Closed" && r.Severity == "High");
+            var risks = d.Raid.Where(r => r.Type == RaidType.Risk).ToList();
+            _openRisks = d.Raid.Count(r => r.Type == RaidType.Risk && r.Status != "Closed");
+            _highRisks = d.Raid.Count(r => r.Severity == "High" && r.Status != "Closed");
+            bool anyHighOpenRisk = risks.Any(r => r.Status != "Closed" && r.Severity == "High");
 
-        if (phases.Any(p => p.Rag == RagStatus.OffTrack) || anyHighOpenRisk)
-            _overallRag = RagStatus.OffTrack;
-        else if (phases.Any(p => p.Rag == RagStatus.AtRisk))
-            _overallRag = RagStatus.AtRisk;
-        else
-            _overallRag = RagStatus.OnTrack;
+            if (phases.Any(p => p.Rag == RagStatus.OffTrack) || anyHighOpenRisk)
+                _overallRag = RagStatus.OffTrack;
+            else if (phases.Any(p => p.Rag == RagStatus.AtRisk))
+                _overallRag = RagStatus.AtRisk;
+            else
+                _overallRag = RagStatus.OnTrack;
 
-        _upcoming = d.Milestones
-            .Where(m => m.Status != "Complete")
-            .OrderBy(m => m.DueDate)
-            .Take(3)
-            .ToList();
+            // Go-live countdown from the "Go-live" milestone, if present.
+            var goLive = d.Milestones.FirstOrDefault(m => m.Name.Contains("Go-live", StringComparison.OrdinalIgnoreCase) && !m.Name.Contains("readiness", StringComparison.OrdinalIgnoreCase));
+            if (goLive is not null)
+            {
+                int days = goLive.DueDate.DayNumber - _asOf.DayNumber;
+                _goLiveCountdown = days > 0 ? $"go-live in {days} days ({goLive.DueDate:MMM d})" : "go-live reached";
+            }
 
-        _topRisks = risks
-            .Where(r => r.Status != "Closed")
-            .OrderByDescending(r => r.Score)
-            .Take(5)
-            .ToList();
+            _accomplishments = d.Milestones
+                .Where(m => m.Status == "Complete" && m.DueDate >= _asOf.AddDays(-45))
+                .OrderByDescending(m => m.DueDate)
+                .ToList();
 
-        var tests = d.TestCases.ToList();
-        int passed = tests.Count(t => t.Result == TestResult.Pass);
-        _passRate = tests.Count == 0 ? 0m : (decimal)passed / tests.Count * 100m;
+            _upcoming = d.Milestones
+                .Where(m => m.Status != "Complete")
+                .OrderBy(m => m.DueDate)
+                .Take(4)
+                .ToList();
 
-        _arTotal = d.ArInvoices.Where(i => i.Status != InvoiceStatus.Paid).Sum(i => i.Amount);
-        _apTotal = d.ApInvoices.Where(i => i.Status != InvoiceStatus.Paid).Sum(i => i.Amount);
+            _topRisks = risks
+                .Where(r => r.Status != "Closed")
+                .OrderByDescending(r => r.Score)
+                .Take(5)
+                .ToList();
 
-        _ready = true;
+            var tests = d.TestCases.ToList();
+            int executed = tests.Count(t => t.Result != TestResult.NotRun);
+            int passed = tests.Count(t => t.Result == TestResult.Pass);
+            _passRate = executed == 0 ? 0m : (decimal)passed / executed * 100m;
+
+            _arTotal = d.ArInvoices.Where(i => i.Status != InvoiceStatus.Paid).Sum(i => i.Amount);
+            _apTotal = d.ApInvoices.Where(i => i.Status != InvoiceStatus.Paid).Sum(i => i.Amount);
+
+            var statuses = new[] { "Complete", "In Progress", "Not Started", "At Risk" };
+            _statusLabels = statuses;
+            _statusSeries = new List<ChartSeries> { new ChartSeries("Milestones", statuses.Select(s => (double)d.Milestones.Count(m => m.Status == s)).ToArray()) };
+            _phaseLabels = phases.Select(p => p.Name).ToArray();
+            _phaseSeries = new List<ChartSeries> { new ChartSeries("% complete", phases.Select(p => (double)p.PercentComplete).ToArray()) };
+
+            _ready = true;
+        }
+        catch
+        {
+            _error = true;
+        }
     }
+
+    private async Task Print() => await JS.InvokeVoidAsync("afcPrint", "");
 
     private static string RagLabel(RagStatus r) => r switch
     {
@@ -202,10 +287,16 @@ else
         sb.AppendLine();
         sb.AppendLine($"Overall RAG: {RagLabel(_overallRag)}");
         sb.AppendLine($"Overall % complete: {Fmt.Pct(_overallPct)}");
-        sb.AppendLine($"Open risks: {_openRisks}");
+        if (!string.IsNullOrEmpty(_goLiveCountdown)) sb.AppendLine($"Schedule: {_goLiveCountdown}");
+        sb.AppendLine($"Open risks: {_openRisks} ({_highRisks} high severity)");
         sb.AppendLine($"Test pass rate: {Fmt.Pct(_passRate)}");
         sb.AppendLine();
-        sb.AppendLine("UPCOMING MILESTONES:");
+        sb.AppendLine("ACCOMPLISHMENTS SINCE LAST REPORT:");
+        if (_accomplishments.Count == 0) sb.AppendLine("  (none)");
+        foreach (var m in _accomplishments)
+            sb.AppendLine($"  - {m.Name} ({m.PhaseName}) completed {m.DueDate:yyyy-MM-dd} [{m.Owner}]");
+        sb.AppendLine();
+        sb.AppendLine("FOCUS FOR NEXT PERIOD:");
         if (_upcoming.Count == 0) sb.AppendLine("  (none)");
         foreach (var m in _upcoming)
             sb.AppendLine($"  - {m.Name} ({m.PhaseName}) due {m.DueDate:yyyy-MM-dd} — {m.Status} [{m.Owner}]");

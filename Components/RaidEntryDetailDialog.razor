@@ -1,0 +1,30 @@
+@implements IDialogContentComponent<RaidEntry>
+
+<div class="dlg-content">
+    <div class="dlg-facts">
+        <div><span class="dlg-fact-label">ID</span><span>@Content.Id</span></div>
+        <div><span class="dlg-fact-label">Type</span><span>@Content.Type</span></div>
+        <div><span class="dlg-fact-label">Owner</span><span>@Content.Owner</span></div>
+        <div><span class="dlg-fact-label">Status</span><span>@Content.Status</span></div>
+        <div><span class="dlg-fact-label">Probability</span><span>@Content.Probability / 5</span></div>
+        <div><span class="dlg-fact-label">Impact</span><span>@Content.Impact / 5</span></div>
+        <div><span class="dlg-fact-label">Score</span><span>@Content.Score (@Content.Severity)</span></div>
+        <div><span class="dlg-fact-label">Raised</span><span>@Content.Raised.ToString("MMM d, yyyy") · @Content.AgeDays d ago</span></div>
+        <div><span class="dlg-fact-label">Target</span><span>@(Content.TargetDate?.ToString("MMM d, yyyy") ?? "—")</span></div>
+    </div>
+
+    <p class="dlg-sub"><strong>@Content.Title</strong></p>
+
+    <h4 class="dlg-section">Response / mitigation</h4>
+    <p class="dlg-sub">@Content.Response</p>
+
+    @if (!string.IsNullOrEmpty(Content.LastUpdate))
+    {
+        <h4 class="dlg-section">Latest update</h4>
+        <p class="dlg-sub">@Content.LastUpdate</p>
+    }
+</div>
+
+@code {
+    [Parameter] public RaidEntry Content { get; set; } = default!;
+}

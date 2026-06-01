@@ -1,40 +1,72 @@
 @page "/raid"
 @inject AppData AppData
+@inject UiState Ui
 @inject IJSRuntime JS
+@inject IDialogService DialogService
 <PageTitle>RAID Log · D365 ERP Command Center</PageTitle>
 
 <style>
     .heatmap { border-collapse: collapse; margin: .4rem 0 1.4rem; }
-    .heatmap td, .heatmap th { border: 1px solid #e1dfdd; padding: .55rem; text-align: center; font-size: .85rem; }
-    .heatmap th { background: #faf9f8; color: #605e5c; font-weight: 600; }
+    .heatmap td, .heatmap th { border: 1px solid var(--border); padding: .55rem; text-align: center; font-size: .85rem; }
+    .heatmap th { background: var(--n-50); color: var(--text-muted); font-weight: 600; }
     .heatmap td.cell { font-weight: 700; width: 54px; height: 40px; }
-    .heatmap .axis-label { font-weight: 600; color: #605e5c; }
+    .heatmap .axis-label { font-weight: 600; color: var(--text-muted); }
     .hm-red { background: #fde7e9; color: #b10e1c; }
     .hm-amber { background: #fff4ce; color: #8a6d00; }
     .hm-green { background: #dff6dd; color: #0e700e; }
 </style>
+
+<div class="print-only print-header">
+    <div class="ph-co">Alamo Foods Co.</div>
+    <div class="ph-report">RAID Log — risks, assumptions, issues, dependencies</div>
+    <div class="ph-meta">
+        As of @AppData.Data.AsOf.ToString("MMM d, yyyy") · Environment @Ui.EnvName ·
+        Generated @DateTime.Now.ToString("MMM d, yyyy h:mm tt")
+    </div>
+</div>
 
 <div class="page-header">
     <div>
         <h1>RAID Log</h1>
         <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">Project Manager</FluentBadge>
     </div>
+    <div style="display:flex;gap:.5rem;align-items:center">
+        <FluentButton Appearance="Appearance.Stealth" OnClick="Print">🖨 Print / PDF</FluentButton>
+        <FluentButton Appearance="Appearance.Accent" OnClick="ExportCsv">⬇ Export CSV</FluentButton>
+    </div>
 </div>
 
-@if (!_ready)
+<PageMeta AsOf="@AppData.Data.AsOf" GeneratedAtUtc="@AppData.Data.GeneratedAtUtc" Module="Implementation · RAID" />
+
+@if (_error)
 {
-    <FluentProgressRing />
+    <ErrorBanner Message="Couldn't load the RAID log. Use the account menu in the header to reset the demo data." />
+}
+else if (!_ready)
+{
+    <Skeleton Variant="page" />
 }
 else
 {
     <div class="kpi-grid">
-        <KpiCard Label="Total Entries" Value="@Fmt.Num(_entries.Count)" Sub="Risks, assumptions, issues, dependencies" />
-        <KpiCard Label="Open Risks" Value="@Fmt.Num(_openRisks)" Sub="Risk · not closed" Positive="false" />
-        <KpiCard Label="Open Issues" Value="@Fmt.Num(_openIssues)" Sub="Issue · not closed" Positive="false" />
-        <KpiCard Label="High Severity" Value="@Fmt.Num(_highSeverity)" Sub="Score ≥ 15" Positive="false" />
+        <KpiCard Label="Total Entries" Value="@Fmt.Num(_entries.Count)" Sub="Risks, assumptions, issues, dependencies"
+                 Clickable="true" OnClick="@(() => ShowByType(null, "All entries"))" />
+        <KpiCard Label="Open Risks" Value="@Fmt.Num(_openRisks)" Sub="Risk · not closed" Positive="false"
+                 Clickable="true" OnClick="@(() => ShowByType(RaidType.Risk, "Open risks"))" />
+        <KpiCard Label="Open Issues" Value="@Fmt.Num(_openIssues)" Sub="Issue · not closed" Positive="false"
+                 Clickable="true" OnClick="@(() => ShowByType(RaidType.Issue, "Open issues"))" />
+        <KpiCard Label="High Severity" Value="@Fmt.Num(_highSeverity)" Sub="Score ≥ 15" Positive="false"
+                 Clickable="true" OnClick="ShowHighSeverity" />
     </div>
 
-    <h2>Risk Heatmap</h2>
+    <div class="chart-grid">
+        <Chart Title="Entries by type" Type="doughnut" Labels="@_typeLabels" Series="@_typeSeries"
+               Hint="Click a slice to filter by type" OnLabelClick="OnTypePick" />
+        <Chart Title="Entries by status" Type="bar" Labels="@_statusLabels" Series="@_statusSeries"
+               Hint="Click a bar to filter by status" OnLabelClick="OnStatusPick" />
+    </div>
+
+    <h2>Risk Heatmap <span class="grid-hint" style="font-weight:400">— click a cell to filter risks at that score</span></h2>
     <table class="heatmap">
         <thead>
             <tr>
@@ -42,10 +74,7 @@ else
                 <th colspan="5">Probability</th>
             </tr>
             <tr>
-                @for (int p = 1; p <= 5; p++)
-                {
-                    <th>@p</th>
-                }
+                @for (int p = 1; p <= 5; p++) { <th>@p</th> }
             </tr>
         </thead>
         <tbody>
@@ -63,72 +92,237 @@ else
                         var prob = p;
                         var score = prob * impact;
                         var count = _risks.Count(r => r.Probability == prob && r.Impact == impact);
-                        <td class="cell @ScoreClass(score)">@count</td>
+                        var active = _cellProb == prob && _cellImpact == impact;
+                        <td class="cell @ScoreClass(score) @(count > 0 ? "hm-click" : "") @(active ? "hm-active" : "")"
+                            @onclick="@(() => OnCellPick(prob, impact, count))">@count</td>
                     }
                 </tr>
             }
         </tbody>
     </table>
 
-    <div class="page-header">
-        <h2 style="margin:0;">All Entries</h2>
-        <FluentButton Appearance="Appearance.Accent" OnClick="ExportCsv">Export CSV</FluentButton>
+    <h2>Entries</h2>
+    <div class="filter-bar">
+        <div class="filter-field">
+            <label>Type</label>
+            <select value="@_type" @onchange="@(e => { _type = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All types</option>
+                @foreach (var t in Enum.GetNames<RaidType>()) { <option value="@t">@t</option> }
+            </select>
+        </div>
+        <div class="filter-field">
+            <label>Severity</label>
+            <select value="@_severity" @onchange="@(e => { _severity = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+            </select>
+        </div>
+        <div class="filter-field">
+            <label>Status</label>
+            <select value="@_status" @onchange="@(e => { _status = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All</option>
+                <option value="Open">Open</option>
+                <option value="Mitigating">Mitigating</option>
+                <option value="Closed">Closed</option>
+            </select>
+        </div>
+        <div class="filter-field" style="flex:1 1 180px">
+            <label>Search</label>
+            <input value="@_search" @oninput="@(e => { _search = e.Value?.ToString() ?? ""; Apply(); })" placeholder="Title or owner…" />
+        </div>
+        <button class="fb-reset" @onclick="ResetFilters">Reset filters</button>
     </div>
-    <div class="grid-wrap">
-        <table class="afc-table">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Type</th>
-                    <th>Title</th>
-                    <th class="num">Prob</th>
-                    <th class="num">Impact</th>
-                    <th class="num">Score</th>
-                    <th>Severity</th>
-                    <th>Owner</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var r in _entries)
-                {
+
+    @if (_cellProb is not null)
+    {
+        <p class="grid-hint">Heatmap filter: risks at probability @_cellProb × impact @_cellImpact. <a href="javascript:void(0)" @onclick="ClearCell">clear</a></p>
+    }
+
+    <p class="grid-hint">@_filtered.Count of @_entries.Count entries shown · click any entry for its response plan and history.</p>
+
+    @if (_filtered.Count == 0)
+    {
+        <div class="grid-wrap">
+            <EmptyState Emoji="🛡️" Title="No matching entries"
+                        Message="No RAID entries match the current filters. Try clearing a filter or resetting." />
+        </div>
+    }
+    else
+    {
+        <div class="grid-wrap">
+            <table class="afc-table">
+                <thead>
                     <tr>
-                        <td>@r.Id</td>
-                        <td>@r.Type</td>
-                        <td>@r.Title</td>
-                        <td class="num">@r.Probability</td>
-                        <td class="num">@r.Impact</td>
-                        <td class="num">@r.Score</td>
-                        <td><StatusBadge Text="@r.Severity" Kind="@SeverityKind(r.Severity)" /></td>
-                        <td>@r.Owner</td>
-                        <td>@r.Status</td>
+                        <th>ID</th>
+                        <th>Type</th>
+                        <th>Title</th>
+                        <th class="num">Prob</th>
+                        <th class="num">Impact</th>
+                        <th class="num">Score</th>
+                        <th>Severity</th>
+                        <th>Owner</th>
+                        <th>Status</th>
                     </tr>
-                }
-            </tbody>
-        </table>
-    </div>
+                </thead>
+                <tbody>
+                    @foreach (var r in _filtered)
+                    {
+                        <tr class="grid-row-clickable @RowTint(r)" @onclick="@(() => OpenEntry(r))">
+                            <td>@r.Id</td>
+                            <td>@r.Type</td>
+                            <td>@r.Title</td>
+                            <td class="num">@r.Probability</td>
+                            <td class="num">@r.Impact</td>
+                            <td class="num">@r.Score</td>
+                            <td><StatusBadge Text="@r.Severity" Kind="@SeverityKind(r.Severity)" /></td>
+                            <td>@r.Owner</td>
+                            <td>@r.Status</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
 }
 
 @code {
     private bool _ready;
+    private bool _error;
+    private string _type = "", _severity = "", _status = "", _search = "";
+    private int? _cellProb, _cellImpact;
+
     private List<RaidEntry> _entries = new();
     private List<RaidEntry> _risks = new();
-    private int _openRisks;
-    private int _openIssues;
-    private int _highSeverity;
+    private List<RaidEntry> _filtered = new();
+    private int _openRisks, _openIssues, _highSeverity;
+
+    private string[] _typeLabels = Array.Empty<string>();
+    private List<ChartSeries> _typeSeries = new();
+    private string[] _statusLabels = Array.Empty<string>();
+    private List<ChartSeries> _statusSeries = new();
 
     protected override async Task OnInitializedAsync()
     {
-        await AppData.InitializeAsync();
-        _entries = AppData.Data.Raid.ToList();
-        _risks = _entries.Where(r => r.Type == RaidType.Risk).ToList();
-        _openRisks = _entries.Count(r => r.Type == RaidType.Risk && r.Status != "Closed");
-        _openIssues = _entries.Count(r => r.Type == RaidType.Issue && r.Status != "Closed");
-        _highSeverity = _entries.Count(r => r.Severity == "High");
-        _ready = true;
+        try
+        {
+            await AppData.InitializeAsync();
+            _entries = AppData.Data.Raid.ToList();
+            _risks = _entries.Where(r => r.Type == RaidType.Risk).ToList();
+            _openRisks = _entries.Count(r => r.Type == RaidType.Risk && r.Status != "Closed");
+            _openIssues = _entries.Count(r => r.Type == RaidType.Issue && r.Status != "Closed");
+            _highSeverity = _entries.Count(r => r.Severity == "High");
+
+            var types = Enum.GetValues<RaidType>();
+            _typeLabels = types.Select(t => t.ToString()).ToArray();
+            _typeSeries = new List<ChartSeries> { new ChartSeries("Entries", types.Select(t => (double)_entries.Count(r => r.Type == t)).ToArray()) };
+
+            var statuses = new[] { "Open", "Mitigating", "Closed" };
+            _statusLabels = statuses;
+            _statusSeries = new List<ChartSeries> { new ChartSeries("Entries", statuses.Select(s => (double)_entries.Count(r => r.Status == s)).ToArray()) };
+
+            Apply();
+            _ready = true;
+        }
+        catch
+        {
+            _error = true;
+        }
+    }
+
+    private void ResetFilters() { _type = _severity = _status = _search = ""; _cellProb = _cellImpact = null; Apply(); }
+    private void ClearCell() { _cellProb = _cellImpact = null; Apply(); }
+    private void OnTypePick(string t) { _type = _type == t ? "" : t; Apply(); }
+    private void OnStatusPick(string s) { _status = _status == s ? "" : s; Apply(); }
+
+    private void OnCellPick(int prob, int impact, int count)
+    {
+        if (count == 0) return;
+        if (_cellProb == prob && _cellImpact == impact) { _cellProb = _cellImpact = null; }
+        else { _cellProb = prob; _cellImpact = impact; }
+        Apply();
+    }
+
+    private void Apply()
+    {
+        var q = _entries.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(_type)) q = q.Where(r => r.Type.ToString() == _type);
+        if (!string.IsNullOrWhiteSpace(_severity)) q = q.Where(r => r.Severity == _severity);
+        if (!string.IsNullOrWhiteSpace(_status)) q = q.Where(r => r.Status == _status);
+        if (_cellProb is int cp && _cellImpact is int ci)
+            q = q.Where(r => r.Type == RaidType.Risk && r.Probability == cp && r.Impact == ci);
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            var s = _search.Trim();
+            q = q.Where(r => r.Title.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                             r.Owner.Contains(s, StringComparison.OrdinalIgnoreCase));
+        }
+        _filtered = q.OrderByDescending(r => r.Score).ToList();
+    }
+
+    private async Task Print() => await JS.InvokeVoidAsync("afcPrint", "");
+
+    private async Task Show(ExecDrilldownDialog.Args args)
+    {
+        var parameters = new DialogParameters
+        {
+            Title = "RAID ▸ " + args.Title,
+            Width = "720px",
+            PrimaryAction = "Close",
+            SecondaryAction = null
+        };
+        await DialogService.ShowDialogAsync<ExecDrilldownDialog>(args, parameters);
+    }
+
+    private async Task ShowByType(RaidType? type, string title)
+    {
+        var rows = (type is null ? _entries : _entries.Where(r => r.Type == type && r.Status != "Closed"))
+            .OrderByDescending(r => r.Score).ToList();
+        await Show(new ExecDrilldownDialog.Args
+        {
+            Title = title,
+            Subtitle = $"{rows.Count} entries.",
+            Kind = ExecDrilldownDialog.ChartKind.Doughnut,
+            DatasetLabel = "Entries",
+            Labels = _typeLabels,
+            Data = _typeSeries[0].Data.Select(v => (decimal)v).ToArray(),
+            Headers = new[] { "ID", "Title", "Score", "Owner", "Status" },
+            Rows = rows.Select(r => new[] { r.Id, r.Title, r.Score.ToString(), r.Owner, r.Status }).ToList()
+        });
+    }
+
+    private async Task ShowHighSeverity()
+    {
+        var rows = _entries.Where(r => r.Severity == "High").OrderByDescending(r => r.Score).ToList();
+        await Show(new ExecDrilldownDialog.Args
+        {
+            Title = "High-severity entries",
+            Subtitle = $"{rows.Count} entries with a score of 15 or higher.",
+            Kind = ExecDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "Score",
+            Labels = rows.Select(r => r.Id).ToArray(),
+            Data = rows.Select(r => (decimal)r.Score).ToArray(),
+            Headers = new[] { "ID", "Title", "Score", "Owner", "Target" },
+            Rows = rows.Select(r => new[] { r.Id, r.Title, r.Score.ToString(), r.Owner, r.TargetDate?.ToString("MMM d, yyyy") ?? "—" }).ToList()
+        });
+    }
+
+    private async Task OpenEntry(RaidEntry r)
+    {
+        var parameters = new DialogParameters
+        {
+            Title = $"RAID ▸ {r.Id} · {r.Type}",
+            Width = "640px",
+            PrimaryAction = "Close",
+            SecondaryAction = null
+        };
+        await DialogService.ShowDialogAsync<RaidEntryDetailDialog>(r, parameters);
     }
 
     private static string ScoreClass(int score) => score >= 15 ? "hm-red" : score >= 8 ? "hm-amber" : "hm-green";
+
+    private static string RowTint(RaidEntry r) => r.Severity == "High" && r.Status != "Closed" ? "var-row-bad" : "";
 
     private static string SeverityKind(string severity) => severity switch
     {
@@ -140,11 +334,12 @@ else
 
     private async Task ExportCsv()
     {
-        var headers = new[] { "ID", "Type", "Title", "Probability", "Impact", "Score", "Severity", "Owner", "Status", "Response" };
+        var headers = new[] { "ID", "Type", "Title", "Probability", "Impact", "Score", "Severity", "Owner", "Status", "Raised", "Target", "Response" };
         var rows = _entries.Select(r => new[]
         {
             r.Id, r.Type.ToString(), r.Title, r.Probability.ToString(), r.Impact.ToString(),
-            r.Score.ToString(), r.Severity, r.Owner, r.Status, r.Response
+            r.Score.ToString(), r.Severity, r.Owner, r.Status,
+            r.Raised.ToString("yyyy-MM-dd"), r.TargetDate?.ToString("yyyy-MM-dd") ?? "", r.Response
         });
         var csv = Csv.Build(headers, rows);
         await JS.InvokeVoidAsync("afcDownload", "raid-log.csv", csv);

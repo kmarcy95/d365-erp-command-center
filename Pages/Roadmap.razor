@@ -1,6 +1,8 @@
 @page "/roadmap"
 @inject AppData AppData
+@inject UiState Ui
 @inject IJSRuntime JS
+@inject IDialogService DialogService
 <PageTitle>Roadmap and Gantt · D365 ERP Command Center</PageTitle>
 
 <style>
@@ -10,33 +12,63 @@
         gap: 1rem;
         align-items: center;
         padding: .65rem 0;
-        border-bottom: 1px solid #eee;
+        border-bottom: 1px solid var(--border);
     }
     .phase-row .phase-name { font-weight: 600; }
-    .phase-row .phase-dates { color: #605e5c; font-size: .85rem; }
-    .bar { background: #eee; border-radius: 6px; height: 14px; overflow: hidden; }
-    .bar-fill { background: #0f6cbd; height: 100%; }
-    .phase-pct { font-size: .78rem; color: #605e5c; margin-top: .25rem; }
+    .phase-row .phase-dates { color: var(--text-muted); font-size: .85rem; }
+    .bar { background: var(--n-100); border-radius: 6px; height: 14px; overflow: hidden; }
+    .bar-fill { background: var(--afc-accent); height: 100%; }
+    .phase-pct { font-size: .78rem; color: var(--text-muted); margin-top: .25rem; }
 </style>
+
+<div class="print-only print-header">
+    <div class="ph-co">Alamo Foods Co.</div>
+    <div class="ph-report">Implementation Roadmap — phases &amp; milestones</div>
+    <div class="ph-meta">
+        As of @AppData.Data.AsOf.ToString("MMM d, yyyy") · Environment @Ui.EnvName ·
+        Generated @DateTime.Now.ToString("MMM d, yyyy h:mm tt")
+    </div>
+</div>
 
 <div class="page-header">
     <div>
         <h1>Roadmap and Gantt</h1>
         <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">Project Manager</FluentBadge>
     </div>
+    <div style="display:flex;gap:.5rem;align-items:center">
+        <FluentButton Appearance="Appearance.Stealth" OnClick="Print">🖨 Print / PDF</FluentButton>
+        <FluentButton Appearance="Appearance.Accent" OnClick="ExportCsv">⬇ Export CSV</FluentButton>
+    </div>
 </div>
 
-@if (!_ready)
+<PageMeta AsOf="@AppData.Data.AsOf" GeneratedAtUtc="@AppData.Data.GeneratedAtUtc" Module="Implementation · Roadmap" />
+
+@if (_error)
 {
-    <FluentProgressRing />
+    <ErrorBanner Message="Couldn't load the roadmap. Use the account menu in the header to reset the demo data." />
+}
+else if (!_ready)
+{
+    <Skeleton Variant="page" />
 }
 else
 {
     <div class="kpi-grid">
-        <KpiCard Label="Overall % Complete" Value="@Fmt.Pct(_overallPct)" Sub="Average across phases" />
-        <KpiCard Label="Milestones" Value="@Fmt.Num(_milestones.Count)" Sub="Total tracked" />
-        <KpiCard Label="Complete" Value="@Fmt.Num(_msComplete)" Sub="Milestones done" />
-        <KpiCard Label="At Risk" Value="@Fmt.Num(_msAtRisk)" Sub="Milestones at risk" Positive="false" />
+        <KpiCard Label="Overall % Complete" Value="@Fmt.Pct(_overallPct)" Sub="Weighted across phases"
+                 Clickable="true" OnClick="ShowPhases" />
+        <KpiCard Label="Milestones" Value="@Fmt.Num(_milestones.Count)" Sub="@($"{_msComplete} complete")"
+                 Clickable="true" OnClick="@(() => ShowMilestones(null, "All milestones"))" />
+        <KpiCard Label="Due Next 30 Days" Value="@Fmt.Num(_dueSoon)" Sub="Open & upcoming"
+                 Clickable="true" OnClick="ShowDueSoon" />
+        <KpiCard Label="At Risk" Value="@Fmt.Num(_msAtRisk)" Sub="Milestones at risk" Positive="false"
+                 Clickable="true" OnClick="@(() => ShowMilestones("At Risk", "At-risk milestones"))" />
+    </div>
+
+    <div class="chart-grid">
+        <Chart Title="% complete by phase" Type="bar" Labels="@_phaseLabels" Series="@_phaseSeries"
+               Hint="Click a bar to filter milestones by phase" OnLabelClick="OnPhasePick" />
+        <Chart Title="Milestone status" Type="doughnut" Labels="@_statusLabels" Series="@_statusSeries"
+               Hint="Click a slice to filter by status" OnLabelClick="OnStatusPick" />
     </div>
 
     <h2>Phases</h2>
@@ -55,54 +87,221 @@ else
         }
     </FluentCard>
 
-    <div class="page-header">
-        <h2 style="margin:0;">Milestones</h2>
-        <FluentButton Appearance="Appearance.Accent" OnClick="ExportCsv">Export CSV</FluentButton>
+    <h2>Milestones</h2>
+    <div class="filter-bar">
+        <div class="filter-field">
+            <label>Phase</label>
+            <select value="@_phase" @onchange="@(e => { _phase = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All phases</option>
+                @foreach (var p in _phases) { <option value="@p.Name">@p.Name</option> }
+            </select>
+        </div>
+        <div class="filter-field">
+            <label>Status</label>
+            <select value="@_status" @onchange="@(e => { _status = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All</option>
+                <option value="Complete">Complete</option>
+                <option value="In Progress">In Progress</option>
+                <option value="Not Started">Not Started</option>
+                <option value="At Risk">At Risk</option>
+            </select>
+        </div>
+        <div class="filter-field" style="flex:1 1 180px">
+            <label>Search</label>
+            <input value="@_search" @oninput="@(e => { _search = e.Value?.ToString() ?? ""; Apply(); })" placeholder="Milestone or owner…" />
+        </div>
+        <button class="fb-reset" @onclick="ResetFilters">Reset filters</button>
     </div>
-    <div class="grid-wrap">
-        <table class="afc-table">
-            <thead>
-                <tr>
-                    <th>Phase</th>
-                    <th>Milestone</th>
-                    <th>Due Date</th>
-                    <th>Owner</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var m in _milestones)
-                {
+
+    <p class="grid-hint">@_filtered.Count of @_milestones.Count milestones shown · click any milestone for its deliverables and progress.</p>
+
+    @if (_filtered.Count == 0)
+    {
+        <div class="grid-wrap">
+            <EmptyState Emoji="🗓️" Title="No matching milestones"
+                        Message="No milestones match the current filters. Try clearing a filter or resetting." />
+        </div>
+    }
+    else
+    {
+        <div class="grid-wrap">
+            <table class="afc-table">
+                <thead>
                     <tr>
-                        <td>@m.PhaseName</td>
-                        <td>@m.Name</td>
-                        <td>@m.DueDate.ToString("MMM d, yyyy")</td>
-                        <td>@m.Owner</td>
-                        <td><StatusBadge Text="@m.Status" Kind="@MilestoneKind(m.Status)" /></td>
+                        <th>Phase</th>
+                        <th>Milestone</th>
+                        <th>Due Date</th>
+                        <th>Owner</th>
+                        <th class="num">% Complete</th>
+                        <th>Status</th>
                     </tr>
-                }
-            </tbody>
-        </table>
-    </div>
+                </thead>
+                <tbody>
+                    @foreach (var m in _filtered)
+                    {
+                        <tr class="grid-row-clickable" @onclick="@(() => OpenMilestone(m))">
+                            <td>@m.PhaseName</td>
+                            <td>@m.Name</td>
+                            <td>@m.DueDate.ToString("MMM d, yyyy")</td>
+                            <td>@m.Owner</td>
+                            <td class="num">@m.PercentComplete%</td>
+                            <td><StatusBadge Text="@m.Status" Kind="@MilestoneKind(m.Status)" /></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
 }
 
 @code {
     private bool _ready;
+    private bool _error;
+    private string _phase = "", _status = "", _search = "";
+
     private List<ProjectPhase> _phases = new();
     private List<Milestone> _milestones = new();
+    private List<Milestone> _filtered = new();
     private decimal _overallPct;
-    private int _msComplete;
-    private int _msAtRisk;
+    private int _msComplete, _msAtRisk, _dueSoon;
+
+    private string[] _phaseLabels = Array.Empty<string>();
+    private List<ChartSeries> _phaseSeries = new();
+    private string[] _statusLabels = Array.Empty<string>();
+    private List<ChartSeries> _statusSeries = new();
 
     protected override async Task OnInitializedAsync()
     {
-        await AppData.InitializeAsync();
-        _phases = AppData.Data.Phases.ToList();
-        _milestones = AppData.Data.Milestones.ToList();
-        _overallPct = _phases.Count > 0 ? (decimal)_phases.Average(p => p.PercentComplete) : 0m;
-        _msComplete = _milestones.Count(m => m.Status == "Complete");
-        _msAtRisk = _milestones.Count(m => m.Status == "At Risk");
-        _ready = true;
+        try
+        {
+            await AppData.InitializeAsync();
+            _phases = AppData.Data.Phases.ToList();
+            _milestones = AppData.Data.Milestones.ToList();
+
+            // Weight phase % by duration for a more honest overall figure.
+            double totalDays = _phases.Sum(p => Math.Max(1, p.End.DayNumber - p.Start.DayNumber));
+            _overallPct = totalDays <= 0 ? 0m
+                : (decimal)(_phases.Sum(p => (p.End.DayNumber - p.Start.DayNumber) * (double)p.PercentComplete) / totalDays);
+
+            _msComplete = _milestones.Count(m => m.Status == "Complete");
+            _msAtRisk = _milestones.Count(m => m.Status == "At Risk");
+            var asOf = AppData.Data.AsOf;
+            _dueSoon = _milestones.Count(m => m.Status != "Complete" && m.DueDate >= asOf && m.DueDate <= asOf.AddDays(30));
+
+            _phaseLabels = _phases.Select(p => p.Name).ToArray();
+            _phaseSeries = new List<ChartSeries> { new ChartSeries("% complete", _phases.Select(p => (double)p.PercentComplete).ToArray()) };
+
+            var statuses = new[] { "Complete", "In Progress", "Not Started", "At Risk" };
+            _statusLabels = statuses;
+            _statusSeries = new List<ChartSeries> { new ChartSeries("Milestones", statuses.Select(s => (double)_milestones.Count(m => m.Status == s)).ToArray()) };
+
+            Apply();
+            _ready = true;
+        }
+        catch
+        {
+            _error = true;
+        }
+    }
+
+    private void ResetFilters() { _phase = _status = _search = ""; Apply(); }
+    private void OnPhasePick(string p) { _phase = _phase == p ? "" : p; Apply(); }
+    private void OnStatusPick(string s) { _status = _status == s ? "" : s; Apply(); }
+
+    private void Apply()
+    {
+        var q = _milestones.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(_phase)) q = q.Where(m => m.PhaseName == _phase);
+        if (!string.IsNullOrWhiteSpace(_status)) q = q.Where(m => m.Status == _status);
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            var s = _search.Trim();
+            q = q.Where(m => m.Name.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                             m.Owner.Contains(s, StringComparison.OrdinalIgnoreCase));
+        }
+        _filtered = q.OrderBy(m => m.DueDate).ToList();
+    }
+
+    private async Task Print() => await JS.InvokeVoidAsync("afcPrint", "");
+
+    private async Task Show(ExecDrilldownDialog.Args args)
+    {
+        var parameters = new DialogParameters
+        {
+            Title = "Roadmap ▸ " + args.Title,
+            Width = "720px",
+            PrimaryAction = "Close",
+            SecondaryAction = null
+        };
+        await DialogService.ShowDialogAsync<ExecDrilldownDialog>(args, parameters);
+    }
+
+    private async Task ShowPhases()
+    {
+        await Show(new ExecDrilldownDialog.Args
+        {
+            Title = "Phase progress",
+            Subtitle = $"{_overallPct:0.0}% complete overall (duration-weighted across {_phases.Count} phases).",
+            Kind = ExecDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "% complete",
+            Labels = _phaseLabels,
+            Data = _phases.Select(p => (decimal)p.PercentComplete).ToArray(),
+            Headers = new[] { "Phase", "Dates", "% Complete", "RAG" },
+            Rows = _phases.Select(p => new[]
+            {
+                p.Name,
+                $"{p.Start:MMM d} – {p.End:MMM d, yyyy}",
+                $"{p.PercentComplete}%",
+                RagText(p.Rag)
+            }).ToList()
+        });
+    }
+
+    private async Task ShowMilestones(string? status, string title)
+    {
+        var rows = (status is null ? _milestones : _milestones.Where(m => m.Status == status)).OrderBy(m => m.DueDate).ToList();
+        await Show(new ExecDrilldownDialog.Args
+        {
+            Title = title,
+            Subtitle = $"{rows.Count} milestones.",
+            Kind = ExecDrilldownDialog.ChartKind.Doughnut,
+            DatasetLabel = "Milestones",
+            Labels = _statusLabels,
+            Data = _statusSeries[0].Data.Select(v => (decimal)v).ToArray(),
+            Headers = new[] { "Milestone", "Phase", "Due", "Status" },
+            Rows = rows.Select(m => new[] { m.Name, m.PhaseName, m.DueDate.ToString("MMM d, yyyy"), m.Status }).ToList()
+        });
+    }
+
+    private async Task ShowDueSoon()
+    {
+        var asOf = AppData.Data.AsOf;
+        var rows = _milestones
+            .Where(m => m.Status != "Complete" && m.DueDate >= asOf && m.DueDate <= asOf.AddDays(30))
+            .OrderBy(m => m.DueDate).ToList();
+        await Show(new ExecDrilldownDialog.Args
+        {
+            Title = "Due in the next 30 days",
+            Subtitle = $"{rows.Count} milestones due between {asOf:MMM d} and {asOf.AddDays(30):MMM d, yyyy}.",
+            Kind = ExecDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "Days to due",
+            Labels = rows.Select(m => m.Name).ToArray(),
+            Data = rows.Select(m => (decimal)(m.DueDate.DayNumber - asOf.DayNumber)).ToArray(),
+            Headers = new[] { "Milestone", "Phase", "Due", "Owner" },
+            Rows = rows.Select(m => new[] { m.Name, m.PhaseName, m.DueDate.ToString("MMM d, yyyy"), m.Owner }).ToList()
+        });
+    }
+
+    private async Task OpenMilestone(Milestone m)
+    {
+        var parameters = new DialogParameters
+        {
+            Title = $"Roadmap ▸ {m.Name}",
+            Width = "640px",
+            PrimaryAction = "Close",
+            SecondaryAction = null
+        };
+        await DialogService.ShowDialogAsync<MilestoneDetailDialog>(m, parameters);
     }
 
     private static string RagText(RagStatus r) => r switch
@@ -134,8 +333,8 @@ else
 
     private async Task ExportCsv()
     {
-        var headers = new[] { "Phase", "Milestone", "Due Date", "Owner", "Status" };
-        var rows = _milestones.Select(m => new[] { m.PhaseName, m.Name, m.DueDate.ToString("yyyy-MM-dd"), m.Owner, m.Status });
+        var headers = new[] { "Phase", "Milestone", "Due Date", "Owner", "% Complete", "Status" };
+        var rows = _milestones.Select(m => new[] { m.PhaseName, m.Name, m.DueDate.ToString("yyyy-MM-dd"), m.Owner, m.PercentComplete.ToString(), m.Status });
         var csv = Csv.Build(headers, rows);
         await JS.InvokeVoidAsync("afcDownload", "roadmap-milestones.csv", csv);
     }

@@ -33,7 +33,44 @@ public static class SeedData
         BuildJournal(d);
         BuildImplementation(d);
         BuildProcesses(d);
+        BuildGovernance(d);
         return d;
+    }
+
+    // ---------------- Governance: budget lifecycle + audit trail ----------------
+
+    private static void BuildGovernance(DemoData d)
+    {
+        d.BudgetMeta = new BudgetMeta
+        {
+            Version = "FY26 Original",
+            Status = "Approved",
+            Scenario = "Annual operating plan",
+            Owner = "Keith Marcy, Financial Controller",
+            Approver = "D. Alvarez, VP Finance",
+            SubmittedDate = new DateOnly(2025, 11, 18),
+            ApprovedDate = new DateOnly(2025, 12, 5),
+            Versions = new List<string> { "FY26 Original", "FY26 Q1 Revision", "FY26 Forecast" }
+        };
+
+        // A plausible recent activity trail. Timestamps are UTC, walking back from AsOf.
+        var baseTs = d.AsOf.ToDateTime(new TimeOnly(16, 0)).ToUniversalTime();
+        AuditEntry E(double hoursAgo, string user, string role, string module, string action, string detail)
+            => new() { Timestamp = baseTs.AddHours(-hoursAgo), User = user, Role = role, Module = module, Action = action, Detail = detail };
+
+        d.AuditLog = new List<AuditEntry>
+        {
+            E(0.4, "Keith Marcy", "Financial Controller", "Budget", "Viewed report", "Opened Budget vs Actual (FY26 Original)"),
+            E(2.1, "Keith Marcy", "Financial Controller", "Budget", "Exported data", "Downloaded budget-vs-actual.csv"),
+            E(6.5, "S. Whitfield", "FP&A Analyst", "Budget", "Edited line", "Marketing · Trade Promotions actual updated to period close"),
+            E(20, "System", "Integration", "GL", "Data sync", "Posted GL period May FY26 from D365 F&O (1,284 entries)"),
+            E(21, "System", "Integration", "AP", "Data sync", "Imported 64 vendor invoices via Data Management Framework"),
+            E(28, "D. Alvarez", "VP Finance", "Budget", "Approved", "Approved FY26 Original operating plan"),
+            E(30, "Keith Marcy", "Financial Controller", "Budget", "Submitted", "Submitted FY26 Original for approval"),
+            E(52, "M. Okafor", "Security Admin", "Security", "Role change", "Granted 'Budget contributor' to S. Whitfield"),
+            E(73, "System", "Integration", "Inventory", "Data sync", "Refreshed on-hand from warehouse SAT/DAL/HOU"),
+            E(96, "Keith Marcy", "Financial Controller", "GL", "Closed period", "Soft-closed April FY26"),
+        };
     }
 
     // ---------------- Supply chain master data ----------------

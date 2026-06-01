@@ -13,5 +13,6 @@ builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.
 builder.Services.AddFluentUIComponents();
 builder.Services.AddScoped<BrowserStorage>();
 builder.Services.AddScoped<AppData>();
+builder.Services.AddScoped<UiState>();
 
 await builder.Build().RunAsync();

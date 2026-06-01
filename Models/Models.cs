@@ -83,6 +83,19 @@ public class ArInvoice
 
 // ---------- Finance: Budget ----------
 
+/// <summary>Governance metadata for the working budget version (lifecycle + approvals).</summary>
+public class BudgetMeta
+{
+    public string Version { get; set; } = "FY26 Original";
+    public string Status { get; set; } = "Approved";   // Draft, Submitted, Approved, Locked
+    public string Owner { get; set; } = "";
+    public string Approver { get; set; } = "";
+    public DateOnly? SubmittedDate { get; set; }
+    public DateOnly? ApprovedDate { get; set; }
+    public string Scenario { get; set; } = "";          // e.g. "Annual operating plan"
+    public List<string> Versions { get; set; } = new(); // selectable version labels
+}
+
 public class BudgetLine
 {
     public string Department { get; set; } = "";
@@ -235,4 +248,16 @@ public class ProcessFlow
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
     public List<ProcessStep> Steps { get; set; } = new();
+}
+
+// ---------- Governance: audit / activity trail ----------
+
+public class AuditEntry
+{
+    public DateTime Timestamp { get; set; }          // UTC
+    public string User { get; set; } = "";
+    public string Role { get; set; } = "";
+    public string Module { get; set; } = "";         // Budget, GL, AP, Security, System…
+    public string Action { get; set; } = "";
+    public string Detail { get; set; } = "";
 }

@@ -233,6 +233,10 @@ public class Milestone
     public DateOnly DueDate { get; set; }
     public string Status { get; set; } = "";        // Not Started, In Progress, Complete, At Risk
     public string Owner { get; set; } = "";
+
+    public int PercentComplete { get; set; }         // 0-100 progress toward the milestone
+    public string Health { get; set; } = "";         // one-line health note / blocker summary
+    public List<string> Deliverables { get; set; } = new(); // key artifacts the milestone produces
 }
 
 public enum RaidType { Risk, Assumption, Issue, Dependency }
@@ -249,6 +253,13 @@ public class RaidEntry
     public string Owner { get; set; } = "";
     public string Status { get; set; } = "";        // Open, Mitigating, Closed
     public string Response { get; set; } = "";
+
+    public DateOnly Raised { get; set; }             // when the entry was logged
+    public DateOnly? TargetDate { get; set; }        // mitigation/resolution target (null if closed/n-a)
+    public string LastUpdate { get; set; } = "";     // most recent status note
+
+    /// <summary>Days the entry has been open (Raised → AsOf), set by the seed.</summary>
+    public int AgeDays { get; set; }
 }
 
 public enum FitGap { Standard, Configuration, Customization, ISV }
@@ -263,6 +274,10 @@ public class Requirement
     public FitGap FitGap { get; set; }
     public int EffortDays { get; set; }
     public string TestStatus { get; set; } = "";    // Not Run, Pass, Fail
+
+    public string Owner { get; set; } = "";          // BA / functional owner
+    public string Status { get; set; } = "";         // Approved, In Review, Draft
+    public string Rationale { get; set; } = "";      // why this fit-gap decision was made
 }
 
 public enum TestResult { NotRun, Pass, Fail }
@@ -276,6 +291,18 @@ public class TestCase
     public TestResult Result { get; set; }
     public DateOnly? LastRun { get; set; }
     public string Tester { get; set; } = "";
+
+    public List<string> Steps { get; set; } = new();       // test script steps
+    public List<TestRun> Runs { get; set; } = new();       // execution history (latest matches Result/LastRun)
+    public string? Defect { get; set; }                    // linked defect id when failed, else null
+}
+
+/// <summary>A single execution of a test case.</summary>
+public class TestRun
+{
+    public DateOnly Date { get; set; }
+    public TestResult Result { get; set; }
+    public string Tester { get; set; } = "";
 }
 
 public class ProcessStep
@@ -284,6 +311,11 @@ public class ProcessStep
     public string Name { get; set; } = "";
     public string Role { get; set; } = "";
     public string System { get; set; } = "";        // D365 module touched
+
+    public string Description { get; set; } = "";    // what happens in this step
+    public string Control { get; set; } = "";        // key control / approval at this step ("" if none)
+    public double CycleTimeHrs { get; set; }         // typical elapsed time for the step
+    public string[] RequirementCodes { get; set; } = Array.Empty<string>(); // traced requirements
 }
 
 public class ProcessFlow
@@ -291,7 +323,11 @@ public class ProcessFlow
     public string Code { get; set; } = "";          // P2P, O2C, R2R
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
+    public string Owner { get; set; } = "";          // process owner
     public List<ProcessStep> Steps { get; set; } = new();
+
+    public double TotalCycleTimeHrs => Steps.Sum(s => s.CycleTimeHrs);
+    public int ControlCount => Steps.Count(s => !string.IsNullOrEmpty(s.Control));
 }
 
 // ---------- Governance: audit / activity trail ----------

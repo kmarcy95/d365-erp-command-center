@@ -5,7 +5,7 @@ namespace D365CommandCenter.Services;
 /// <summary>Container for the whole demo dataset (one object persisted to localStorage).</summary>
 public class DemoData
 {
-    public int Version { get; set; } = 4;
+    public int Version { get; set; } = 5;
     public string CompanyName { get; set; } = "Alamo Foods Co.";
     public DateOnly AsOf { get; set; }
     public DateTime GeneratedAtUtc { get; set; } = DateTime.UtcNow;

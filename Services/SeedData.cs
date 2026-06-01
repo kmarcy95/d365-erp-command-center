@@ -475,58 +475,84 @@ public static class SeedData
         d.Phases.Add(new ProjectPhase { Id = 3, Name = "Prepare", Start = new(2026, 5, 1), End = new(2026, 7, 15), PercentComplete = 62, Rag = RagStatus.AtRisk });
         d.Phases.Add(new ProjectPhase { Id = 4, Name = "Operate", Start = new(2026, 7, 16), End = new(2026, 9, 30), PercentComplete = 0, Rag = RagStatus.OnTrack });
 
-        var ms = new (int phase, string name, string due, string status, string owner)[]
+        // (phase, name, due, status, owner, pct, health, deliverables)
+        var ms = new (int phase, string name, string due, string status, string owner, int pct, string health, string[] deliv)[]
         {
-            (1,"Project charter approved","2025-09-20","Complete","K. Marcy"),
-            (1,"Solution blueprint signed off","2025-10-25","Complete","K. Marcy"),
-            (2,"Finance module configured","2025-12-15","Complete","S. Patel"),
-            (2,"Procurement & Inventory configured","2026-01-31","Complete","T. Okafor"),
-            (2,"Data migration dry run 1","2026-02-20","Complete","M. Reyna"),
-            (2,"Integrations build complete","2026-03-25","Complete","J. Daniels"),
-            (2,"SIT (System Integration Test) passed","2026-04-28","Complete","K. Marcy"),
-            (3,"UAT round 1 complete","2026-05-23","Complete","K. Marcy"),
-            (3,"UAT round 2 complete","2026-06-13","In Progress","K. Marcy"),
-            (3,"Cutover plan approved","2026-06-20","In Progress","S. Patel"),
-            (3,"Data migration final load","2026-07-05","Not Started","M. Reyna"),
-            (3,"Go-live readiness review","2026-07-12","At Risk","K. Marcy"),
-            (4,"Go-live","2026-07-16","Not Started","K. Marcy"),
-            (4,"Hypercare exit","2026-09-15","Not Started","K. Marcy"),
+            (1,"Project charter approved","2025-09-20","Complete","K. Marcy",100,"Signed off on schedule.",
+                new[]{"Project charter","Governance model","Stakeholder register"}),
+            (1,"Solution blueprint signed off","2025-10-25","Complete","K. Marcy",100,"Approved by steering committee.",
+                new[]{"Solution blueprint","Scope statement","High-level architecture"}),
+            (2,"Finance module configured","2025-12-15","Complete","S. Patel",100,"GL, AP, AR, Budget configured & unit-tested.",
+                new[]{"Chart of accounts","Financial dimensions","Posting profiles","Budget control rules"}),
+            (2,"Procurement & Inventory configured","2026-01-31","Complete","T. Okafor",100,"P2P and warehouse setup complete.",
+                new[]{"Vendor groups","Item model groups","Warehouse layout","Approval workflows"}),
+            (2,"Data migration dry run 1","2026-02-20","Complete","M. Reyna",100,"First load at 92% accuracy; gaps logged.",
+                new[]{"Migration templates","Dry-run 1 reconciliation","Data-quality report"}),
+            (2,"Integrations build complete","2026-03-25","Complete","J. Daniels",100,"EDI, bank, and planning interfaces built.",
+                new[]{"EDI 850/810 maps","Bank file interface","Forecast import"}),
+            (2,"SIT (System Integration Test) passed","2026-04-28","Complete","K. Marcy",100,"End-to-end SIT signed off.",
+                new[]{"SIT test results","Defect log","Integration sign-off"}),
+            (3,"UAT round 1 complete","2026-05-23","Complete","K. Marcy",100,"Round 1 passed; 9 defects retested.",
+                new[]{"UAT round 1 results","Defect triage log"}),
+            (3,"UAT round 2 complete","2026-06-13","In Progress","K. Marcy",55,"On track; SME availability is the watch item.",
+                new[]{"UAT round 2 scripts","Business sign-off"}),
+            (3,"Cutover plan approved","2026-06-20","In Progress","S. Patel",40,"Draft in review with infrastructure team.",
+                new[]{"Cutover runbook","Rollback plan","Cutover schedule"}),
+            (3,"Data migration final load","2026-07-05","Not Started","M. Reyna",0,"Awaiting dry-run 2 acceptance.",
+                new[]{"Final load reconciliation","Opening balance sign-off"}),
+            (3,"Go-live readiness review","2026-07-12","At Risk","K. Marcy",20,"At risk: master-data quality below threshold.",
+                new[]{"Go/no-go checklist","Readiness scorecard"}),
+            (4,"Go-live","2026-07-16","Not Started","K. Marcy",0,"Dependent on readiness review.",
+                new[]{"Production cutover","Hypercare kickoff"}),
+            (4,"Hypercare exit","2026-09-15","Not Started","K. Marcy",0,"Planned 8-week hypercare window.",
+                new[]{"Hypercare exit report","Support handover","Benefits baseline"}),
         };
         int id = 1;
         foreach (var m in ms)
             d.Milestones.Add(new Milestone
             {
                 Id = id++, PhaseId = m.phase, PhaseName = d.Phases.First(p => p.Id == m.phase).Name,
-                Name = m.name, DueDate = DateOnly.Parse(m.due), Status = m.status, Owner = m.owner
+                Name = m.name, DueDate = DateOnly.Parse(m.due), Status = m.status, Owner = m.owner,
+                PercentComplete = m.pct, Health = m.health, Deliverables = m.deliv.ToList()
             });
 
-        var raid = new (RaidType t, string title, int p, int im, string owner, string status, string resp)[]
+        // (type, title, prob, impact, owner, status, response, raisedDaysAgo, targetDate, lastUpdate)
+        var raid = new (RaidType t, string title, int p, int im, string owner, string status, string resp, int raisedAgo, string? target, string update)[]
         {
-            (RaidType.Risk,"Master data quality below 95% threshold for go-live",4,5,"M. Reyna","Mitigating","Daily data-cleansing sprints; dual validation"),
-            (RaidType.Risk,"Key SME availability limited during UAT round 2",3,4,"K. Marcy","Open","Backfill with power users; reschedule sessions"),
-            (RaidType.Risk,"EDI integration with H-E-B not fully tested",3,5,"J. Daniels","Mitigating","Prioritize EDI test scripts; vendor war-room"),
-            (RaidType.Risk,"Warehouse barcode scanners firmware incompatibility",2,4,"T. Okafor","Open","Pilot on 5 devices; order replacements if needed"),
-            (RaidType.Issue,"Tax configuration incorrect for export segment",4,4,"S. Patel","Open","Engage tax SME; reconfigure sales tax groups"),
-            (RaidType.Issue,"Performance lag on inventory aging report",2,3,"J. Daniels","Mitigating","Add index; move to batch report"),
-            (RaidType.Issue,"Duplicate vendor records found in migration",3,2,"M. Reyna","Closed","Dedup rules applied; 312 merged"),
-            (RaidType.Assumption,"Legacy system available read-only through hypercare",2,3,"K. Marcy","Open","Confirmed with infra team"),
-            (RaidType.Assumption,"Business freezes non-critical changes during cutover",3,4,"K. Marcy","Open","Change freeze memo issued"),
-            (RaidType.Dependency,"Bank file format sign-off from treasury",3,4,"S. Patel","Open","Treasury reviewing test files"),
-            (RaidType.Dependency,"Network upgrade at Dallas DC before go-live",2,5,"T. Okafor","Mitigating","IT scheduled for 2026-07-01"),
-            (RaidType.Risk,"Insufficient hypercare staffing for peak season",3,3,"K. Marcy","Open","Draft hypercare roster; on-call rotation"),
+            (RaidType.Risk,"Master data quality below 95% threshold for go-live",4,5,"M. Reyna","Mitigating","Daily data-cleansing sprints; dual validation",48,"2026-07-08","Quality at 92.4%; trending up ~0.5%/week."),
+            (RaidType.Risk,"Key SME availability limited during UAT round 2",3,4,"K. Marcy","Open","Backfill with power users; reschedule sessions",21,"2026-06-10","Two SMEs on PTO; power-user backfill identified."),
+            (RaidType.Risk,"EDI integration with H-E-B not fully tested",3,5,"J. Daniels","Mitigating","Prioritize EDI test scripts; vendor war-room",35,"2026-06-30","War-room scheduled; 6 of 10 scripts passing."),
+            (RaidType.Risk,"Warehouse barcode scanners firmware incompatibility",2,4,"T. Okafor","Open","Pilot on 5 devices; order replacements if needed",30,"2026-06-25","Pilot underway on 5 units at SAT."),
+            (RaidType.Issue,"Tax configuration incorrect for export segment",4,4,"S. Patel","Open","Engage tax SME; reconfigure sales tax groups",14,"2026-06-12","Tax SME engaged; reconfiguration in progress."),
+            (RaidType.Issue,"Performance lag on inventory aging report",2,3,"J. Daniels","Mitigating","Add index; move to batch report",26,"2026-06-15","Index added; moving to batch in next sprint."),
+            (RaidType.Issue,"Duplicate vendor records found in migration",3,2,"M. Reyna","Closed","Dedup rules applied; 312 merged",60,null,"Closed — 312 duplicates merged, rules in place."),
+            (RaidType.Assumption,"Legacy system available read-only through hypercare",2,3,"K. Marcy","Open","Confirmed with infra team",40,"2026-09-15","Confirmed with infrastructure team."),
+            (RaidType.Assumption,"Business freezes non-critical changes during cutover",3,4,"K. Marcy","Open","Change freeze memo issued",18,"2026-07-14","Change-freeze memo issued to department heads."),
+            (RaidType.Dependency,"Bank file format sign-off from treasury",3,4,"S. Patel","Open","Treasury reviewing test files",22,"2026-06-20","Treasury reviewing test files; response expected this week."),
+            (RaidType.Dependency,"Network upgrade at Dallas DC before go-live",2,5,"T. Okafor","Mitigating","IT scheduled for 2026-07-01",33,"2026-07-01","IT change scheduled and approved."),
+            (RaidType.Risk,"Insufficient hypercare staffing for peak season",3,3,"K. Marcy","Open","Draft hypercare roster; on-call rotation",12,"2026-07-10","Roster drafted; on-call rotation pending HR approval."),
         };
         int rid = 1;
         foreach (var r in raid)
+        {
+            var raised = AsOf.AddDays(-r.raisedAgo);
             d.Raid.Add(new RaidEntry
             {
                 Id = $"R-{rid++:000}", Type = r.t, Title = r.title, Probability = r.p, Impact = r.im,
-                Owner = r.owner, Status = r.status, Response = r.resp
+                Owner = r.owner, Status = r.status, Response = r.resp,
+                Raised = raised,
+                TargetDate = r.target is null ? null : DateOnly.Parse(r.target),
+                LastUpdate = r.update,
+                AgeDays = r.raisedAgo
             });
+        }
 
         var areas = new[] { "Finance", "Procurement", "Inventory", "Sales", "Reporting" };
         var procAreas = new[] { "R2R", "P2P", "P2P", "O2C", "R2R" };
         var fits = new[] { FitGap.Standard, FitGap.Standard, FitGap.Configuration, FitGap.Configuration, FitGap.Customization, FitGap.ISV };
         var prios = new[] { "Must", "Must", "Should", "Could" };
+        var reqOwners = new[] { "K. Marcy", "S. Patel", "T. Okafor", "M. Reyna", "J. Daniels" };
+        var reqStatuses = new[] { "Approved", "Approved", "Approved", "In Review", "Draft" };
         var reqText = new[]
         {
             "Post journal entries with financial dimensions", "Automate AP three-way match",
@@ -549,6 +575,7 @@ public static class SeedData
         for (int i = 0; i < reqText.Length; i++)
         {
             int a = i % areas.Length;
+            var fit = Pick(fits);
             d.Requirements.Add(new Requirement
             {
                 Code = $"{areas[a][..3].ToUpper()}-{i + 1:000}",
@@ -556,14 +583,18 @@ public static class SeedData
                 Description = reqText[i],
                 Priority = Pick(prios),
                 ProcessArea = procAreas[a],
-                FitGap = Pick(fits),
+                FitGap = fit,
                 EffortDays = Rng.Next(1, 25),
-                TestStatus = Pick(testStatuses)
+                TestStatus = Pick(testStatuses),
+                Owner = Pick(reqOwners),
+                Status = Pick(reqStatuses),
+                Rationale = FitGapRationale(fit)
             });
         }
 
         var testers = new[] { "K. Marcy", "S. Patel", "T. Okafor", "M. Reyna" };
         int tc = 101;
+        int defectNo = 201;
         foreach (var r in d.Requirements)
         {
             int cases = Rng.Next(1, 3);
@@ -575,6 +606,22 @@ public static class SeedData
                     "Fail" => Rng.NextDouble() < 0.5 ? TestResult.Fail : TestResult.Pass,
                     _ => TestResult.NotRun
                 };
+                var tester = Pick(testers);
+                DateOnly? lastRun = res == TestResult.NotRun ? null : AsOf.AddDays(-Rng.Next(1, 30));
+
+                // Run history: earlier attempts trend toward the final result.
+                var runs = new List<TestRun>();
+                if (res != TestResult.NotRun && lastRun is DateOnly lr)
+                {
+                    int attempts = res == TestResult.Pass ? Rng.Next(1, 3) : Rng.Next(2, 4);
+                    for (int k = attempts - 1; k >= 0; k--)
+                    {
+                        // earliest attempts may fail; the final attempt matches the case result
+                        var runRes = k == 0 ? res : (Rng.NextDouble() < 0.5 ? TestResult.Fail : TestResult.Pass);
+                        runs.Add(new TestRun { Date = lr.AddDays(-k * 4), Result = runRes, Tester = tester });
+                    }
+                }
+
                 d.TestCases.Add(new TestCase
                 {
                     Code = $"TC-{tc++}",
@@ -582,55 +629,111 @@ public static class SeedData
                     Title = $"Verify: {r.Description}",
                     ProcessArea = r.ProcessArea,
                     Result = res,
-                    LastRun = res == TestResult.NotRun ? null : AsOf.AddDays(-Rng.Next(1, 30)),
-                    Tester = Pick(testers)
+                    LastRun = lastRun,
+                    Tester = tester,
+                    Steps = BuildTestSteps(r.Description),
+                    Runs = runs,
+                    Defect = res == TestResult.Fail ? $"DEF-{defectNo++}" : null
                 });
             }
         }
     }
 
+    private static string FitGapRationale(FitGap fit) => fit switch
+    {
+        FitGap.Standard => "Met by standard D365 F&O functionality; configuration only.",
+        FitGap.Configuration => "Achievable through parameters/setup without code.",
+        FitGap.Customization => "Requires an X++ extension; assessed vs. process change.",
+        FitGap.ISV => "Best served by a certified ISV add-on to avoid custom code.",
+        _ => ""
+    };
+
+    private static List<string> BuildTestSteps(string desc) => new()
+    {
+        "Sign in with the relevant security role and open the module.",
+        $"Set up preconditions for: {desc.ToLower()}.",
+        "Execute the transaction with valid and boundary inputs.",
+        "Verify postings, workflow state, and reporting reflect the expected result."
+    };
+
     private static void BuildProcesses(DemoData d)
     {
         d.Processes.Add(new ProcessFlow
         {
-            Code = "P2P", Name = "Procure to Pay",
+            Code = "P2P", Name = "Procure to Pay", Owner = "T. Okafor, Procurement Lead",
             Description = "From purchase requisition through vendor payment.",
             Steps = new()
             {
-                new() { Order = 1, Name = "Create requisition", Role = "Requester", System = "Procurement" },
-                new() { Order = 2, Name = "Approve requisition", Role = "Manager", System = "Workflow" },
-                new() { Order = 3, Name = "Issue purchase order", Role = "Buyer", System = "Procurement" },
-                new() { Order = 4, Name = "Receive goods", Role = "Warehouse", System = "Inventory" },
-                new() { Order = 5, Name = "Match invoice (3-way)", Role = "AP Clerk", System = "Accounts Payable" },
-                new() { Order = 6, Name = "Pay vendor", Role = "Treasury", System = "Cash & Bank" },
+                new() { Order = 1, Name = "Create requisition", Role = "Requester", System = "Procurement", CycleTimeHrs = 2,
+                    Description = "Requester raises a purchase requisition with item, quantity, and need-by date.",
+                    Control = "Budget availability check", RequirementCodes = new[]{ "PRO-027" } },
+                new() { Order = 2, Name = "Approve requisition", Role = "Manager", System = "Workflow", CycleTimeHrs = 8,
+                    Description = "Requisition routes through the approval hierarchy based on amount and category.",
+                    Control = "Approval hierarchy / SoD", RequirementCodes = new[]{ "PRO-027", "FIN-021" } },
+                new() { Order = 3, Name = "Issue purchase order", Role = "Buyer", System = "Procurement", CycleTimeHrs = 4,
+                    Description = "Buyer converts the approved requisition into a purchase order to the vendor.",
+                    Control = "Vendor on approved list", RequirementCodes = Array.Empty<string>() },
+                new() { Order = 4, Name = "Receive goods", Role = "Warehouse", System = "Inventory", CycleTimeHrs = 48,
+                    Description = "Warehouse records the product receipt and posts goods into on-hand inventory.",
+                    Control = "Quality hold on receipt", RequirementCodes = new[]{ "INV-013", "PRO-022" } },
+                new() { Order = 5, Name = "Match invoice (3-way)", Role = "AP Clerk", System = "Accounts Payable", CycleTimeHrs = 6,
+                    Description = "Vendor invoice is matched to the PO and receipt; discrepancies are flagged.",
+                    Control = "Three-way match tolerance", RequirementCodes = new[]{ "PRO-002" } },
+                new() { Order = 6, Name = "Pay vendor", Role = "Treasury", System = "Cash & Bank", CycleTimeHrs = 24,
+                    Description = "Approved invoices are settled in the payment run per the vendor's terms.",
+                    Control = "Payment approval & bank file sign-off", RequirementCodes = new[]{ "FIN-016" } },
             }
         });
         d.Processes.Add(new ProcessFlow
         {
-            Code = "O2C", Name = "Order to Cash",
+            Code = "O2C", Name = "Order to Cash", Owner = "S. Patel, O2C Lead",
             Description = "From sales order through customer collection.",
             Steps = new()
             {
-                new() { Order = 1, Name = "Capture sales order", Role = "CSR", System = "Sales" },
-                new() { Order = 2, Name = "Check credit & availability", Role = "Finance", System = "Accounts Receivable" },
-                new() { Order = 3, Name = "Pick & pack", Role = "Warehouse", System = "Inventory" },
-                new() { Order = 4, Name = "Ship", Role = "Logistics", System = "Sales" },
-                new() { Order = 5, Name = "Invoice customer", Role = "AR Clerk", System = "Accounts Receivable" },
-                new() { Order = 6, Name = "Collect payment", Role = "Collections", System = "Cash & Bank" },
+                new() { Order = 1, Name = "Capture sales order", Role = "CSR", System = "Sales", CycleTimeHrs = 1,
+                    Description = "Customer service captures the sales order with products, pricing, and ship date.",
+                    Control = "Promotional pricing rules", RequirementCodes = new[]{ "SAL-024" } },
+                new() { Order = 2, Name = "Check credit & availability", Role = "Finance", System = "Accounts Receivable", CycleTimeHrs = 3,
+                    Description = "Order is checked against the customer credit limit and stock availability.",
+                    Control = "Credit limit enforcement", RequirementCodes = new[]{ "INV-003", "INV-009" } },
+                new() { Order = 3, Name = "Pick & pack", Role = "Warehouse", System = "Inventory", CycleTimeHrs = 12,
+                    Description = "Warehouse picks, packs, and stages the order for shipment.",
+                    Control = "Lot/batch traceability", RequirementCodes = new[]{ "INV-008", "SAL-019" } },
+                new() { Order = 4, Name = "Ship", Role = "Logistics", System = "Sales", CycleTimeHrs = 8,
+                    Description = "Goods are shipped and the packing slip / export docs are generated.",
+                    Control = "Export documentation", RequirementCodes = new[]{ "REP-015" } },
+                new() { Order = 5, Name = "Invoice customer", Role = "AR Clerk", System = "Accounts Receivable", CycleTimeHrs = 2,
+                    Description = "Customer invoice is posted from the shipment and sent to the customer.",
+                    Control = "Multi-currency for export", RequirementCodes = new[]{ "SAL-026" } },
+                new() { Order = 6, Name = "Collect payment", Role = "Collections", System = "Cash & Bank", CycleTimeHrs = 72,
+                    Description = "Payment is received and applied; overdue accounts enter dunning.",
+                    Control = "Aging & dunning workflow", RequirementCodes = new[]{ "SAL-004" } },
             }
         });
         d.Processes.Add(new ProcessFlow
         {
-            Code = "R2R", Name = "Record to Report",
+            Code = "R2R", Name = "Record to Report", Owner = "K. Marcy, Financial Controller",
             Description = "From transaction capture through financial reporting.",
             Steps = new()
             {
-                new() { Order = 1, Name = "Capture transactions", Role = "All", System = "Sub-ledgers" },
-                new() { Order = 2, Name = "Post to general ledger", Role = "Accountant", System = "General Ledger" },
-                new() { Order = 3, Name = "Reconcile accounts", Role = "Accountant", System = "Cash & Bank" },
-                new() { Order = 4, Name = "Period-end close", Role = "Controller", System = "General Ledger" },
-                new() { Order = 5, Name = "Consolidate", Role = "Controller", System = "General Ledger" },
-                new() { Order = 6, Name = "Financial reporting", Role = "FP&A", System = "Management Reporter" },
+                new() { Order = 1, Name = "Capture transactions", Role = "All", System = "Sub-ledgers", CycleTimeHrs = 1,
+                    Description = "Sub-ledger transactions are recorded across AP, AR, inventory, and payroll.",
+                    Control = "Financial dimensions required", RequirementCodes = new[]{ "FIN-001" } },
+                new() { Order = 2, Name = "Post to general ledger", Role = "Accountant", System = "General Ledger", CycleTimeHrs = 2,
+                    Description = "Sub-ledger activity posts to GL control accounts with dimensions.",
+                    Control = "Posting profile validation", RequirementCodes = new[]{ "FIN-001" } },
+                new() { Order = 3, Name = "Reconcile accounts", Role = "Accountant", System = "Cash & Bank", CycleTimeHrs = 16,
+                    Description = "Bank and balance-sheet accounts are reconciled to source.",
+                    Control = "Bank reconciliation", RequirementCodes = new[]{ "FIN-016" } },
+                new() { Order = 4, Name = "Period-end close", Role = "Controller", System = "General Ledger", CycleTimeHrs = 24,
+                    Description = "Close checklist is executed and the period is locked.",
+                    Control = "Month-end close checklist", RequirementCodes = new[]{ "REP-010" } },
+                new() { Order = 5, Name = "Consolidate", Role = "Controller", System = "General Ledger", CycleTimeHrs = 8,
+                    Description = "Intercompany balances are eliminated and entities consolidated.",
+                    Control = "Intercompany eliminations", RequirementCodes = new[]{ "FIN-022" } },
+                new() { Order = 6, Name = "Financial reporting", Role = "FP&A", System = "Management Reporter", CycleTimeHrs = 6,
+                    Description = "Statements and the flash dashboard are produced for leadership.",
+                    Control = "Reporting review & sign-off", RequirementCodes = new[]{ "REP-005" } },
             }
         });
     }

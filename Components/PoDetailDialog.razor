@@ -1,0 +1,35 @@
+@implements IDialogContentComponent<PurchaseOrder>
+
+<div class="dlg-content">
+    <div class="dlg-facts">
+        <div><span class="dlg-fact-label">PO Number</span><span>@Content.Number</span></div>
+        <div><span class="dlg-fact-label">Vendor</span><span>@Content.VendorName (@Content.VendorNumber)</span></div>
+        <div><span class="dlg-fact-label">Buyer</span><span>@Content.Buyer</span></div>
+        <div><span class="dlg-fact-label">Status</span><span><StatusBadge Text="@Content.Status.ToString()" Kind="@StatusKind(Content.Status)" /></span></div>
+        <div><span class="dlg-fact-label">Approval</span><span><StatusBadge Text="@Content.ApprovalStatus" Kind="@(Content.ApprovalStatus == "Approved" ? "good" : "warn")" /></span></div>
+    </div>
+
+    <h4 class="dlg-section">Order</h4>
+    <table class="afc-table dlg-table">
+        <tbody>
+            <tr><td>Order date</td><td class="num">@Content.OrderDate.ToString("yyyy-MM-dd")</td></tr>
+            <tr><td>Expected date</td><td class="num">@Content.ExpectedDate.ToString("yyyy-MM-dd")</td></tr>
+            <tr><td>Lead time</td><td class="num">@LeadDays days</td></tr>
+            <tr class="total"><td>PO total</td><td class="num">@Fmt.Money(Content.Total)</td></tr>
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter] public PurchaseOrder Content { get; set; } = default!;
+
+    private int LeadDays => Content.ExpectedDate.DayNumber - Content.OrderDate.DayNumber;
+
+    private static string StatusKind(PoStatus s) => s switch
+    {
+        PoStatus.Received => "good",
+        PoStatus.Approved => "info",
+        PoStatus.Submitted => "warn",
+        _ => "neutral"
+    };
+}

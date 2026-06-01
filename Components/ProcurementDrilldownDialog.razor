@@ -1,0 +1,127 @@
+@implements IDialogContentComponent<ProcurementDrilldownDialog.Args>
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<div class="dlg-content">
+    <p class="dlg-sub">@Content.Subtitle</p>
+
+    <div class="chart-canvas-wrap">
+        <canvas id="@_canvasId"></canvas>
+    </div>
+
+    <table class="afc-table dlg-table">
+        <thead>
+            <tr>
+                <th>Number</th>
+                <th>Vendor</th>
+                <th>Order Date</th>
+                <th>Expected</th>
+                <th class="num">Total ($)</th>
+                <th>Status</th>
+                <th>Approval</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var p in Content.Orders.OrderByDescending(p => p.Total))
+            {
+                <tr>
+                    <td>@p.Number</td>
+                    <td>@p.VendorName</td>
+                    <td>@p.OrderDate.ToString("yyyy-MM-dd")</td>
+                    <td>@p.ExpectedDate.ToString("yyyy-MM-dd")</td>
+                    <td class="num">@Fmt.Num(p.Total)</td>
+                    <td><StatusBadge Text="@p.Status.ToString()" Kind="@StatusKind(p.Status)" /></td>
+                    <td><StatusBadge Text="@p.ApprovalStatus" Kind="@(p.ApprovalStatus == "Approved" ? "good" : "warn")" /></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter] public Args Content { get; set; } = default!;
+
+    private readonly string _canvasId = "po-chart-" + Guid.NewGuid().ToString("N");
+    private bool _rendered;
+
+    public enum ChartKind { Bar, Doughnut }
+
+    public class Args
+    {
+        public string Title { get; set; } = "";
+        public string Subtitle { get; set; } = "";
+        public List<PurchaseOrder> Orders { get; set; } = new();
+        public ChartKind Kind { get; set; } = ChartKind.Bar;
+        public string DatasetLabel { get; set; } = "";
+        public string[] Labels { get; set; } = Array.Empty<string>();
+        public decimal[] Data { get; set; } = Array.Empty<decimal>();
+        public bool MoneyAxis { get; set; }
+    }
+
+    private static readonly string[] Palette =
+        { "#0078d4", "#107c10", "#ca5010", "#d13438", "#8764b8", "#038387", "#a4262c", "#5c2e91", "#498205", "#c19c00" };
+
+    private static string StatusKind(PoStatus s) => s switch
+    {
+        PoStatus.Received => "good",
+        PoStatus.Approved => "info",
+        PoStatus.Submitted => "warn",
+        _ => "neutral"
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _rendered) return;
+        _rendered = true;
+
+        var data = Content.Data.Select(v => (double)v).ToArray();
+        var isDoughnut = Content.Kind == ChartKind.Doughnut;
+
+        object backgroundColor = isDoughnut
+            ? Content.Labels.Select((_, i) => Palette[i % Palette.Length]).ToArray()
+            : "#0078d4";
+
+        object options = isDoughnut
+            ? (object)new
+            {
+                responsive = true,
+                maintainAspectRatio = false,
+                plugins = new { legend = new { display = true, position = "bottom" } }
+            }
+            : (object)new
+            {
+                responsive = true,
+                maintainAspectRatio = false,
+                plugins = new { legend = new { display = false, position = "bottom" } },
+                scales = new { y = new { beginAtZero = true } }
+            };
+
+        object config = new
+        {
+            type = isDoughnut ? "doughnut" : "bar",
+            data = new
+            {
+                labels = Content.Labels,
+                datasets = new[]
+                {
+                    new
+                    {
+                        label = Content.DatasetLabel,
+                        data,
+                        backgroundColor,
+                        borderWidth = 0
+                    }
+                }
+            },
+            options
+        };
+
+        await JS.InvokeVoidAsync("afcCharts.render", _canvasId, config);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("afcCharts.destroy", _canvasId); }
+        catch { /* JS runtime may already be gone on teardown */ }
+    }
+}

@@ -1,6 +1,7 @@
 @page "/procurement"
 @inject AppData AppData
 @inject IJSRuntime JS
+@inject IDialogService DialogService
 <PageTitle>Procurement · D365 ERP Command Center</PageTitle>
 
 <div class="page-header">
@@ -18,19 +19,27 @@
 else
 {
     <div class="kpi-grid">
-        <KpiCard Label="Open PO Value" Value="@Fmt.Money(_openValue)" Sub="POs not yet received" />
-        <KpiCard Label="Purchase Orders" Value="@Fmt.Num(_all.Count)" Sub="Total POs" />
-        <KpiCard Label="Pending Approval" Value="@Fmt.Num(_pendingApproval)" Sub="Not yet approved" />
-        <KpiCard Label="Vendors" Value="@Fmt.Num(_vendorCount)" Sub="Distinct vendors" />
+        <KpiCard Label="Open PO Value" Value="@Fmt.Money(_openValue)" Sub="POs not yet received"
+                 Clickable="true" OnClick="ShowOpenValue" />
+        <KpiCard Label="Purchase Orders" Value="@Fmt.Num(_all.Count)" Sub="Total POs"
+                 Clickable="true" OnClick="ShowAllOrders" />
+        <KpiCard Label="Pending Approval" Value="@Fmt.Num(_pendingApproval)" Sub="Not yet approved" Positive="false"
+                 Clickable="true" OnClick="ShowPendingApproval" />
+        <KpiCard Label="Vendors" Value="@Fmt.Num(_vendorCount)" Sub="Distinct vendors"
+                 Clickable="true" OnClick="ShowVendors" />
     </div>
 
     <FluentSearch @bind-Value="_search" @bind-Value:after="Apply" Placeholder="Search vendor name or number…" Class="afc-search" />
 
+    <p class="grid-hint">Click any row for the purchase order’s detail.</p>
     <div class="grid-wrap">
-        <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="PurchaseOrder">
+        <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="PurchaseOrder"
+                        OnRowClick="@(async (FluentDataGridRow<PurchaseOrder> row) => await OpenOrder(row.Item))"
+                        RowClass="@(_ => "grid-row-clickable")">
             <PropertyColumn Property="@(p => p.Number)" Title="Number" Sortable="true" />
             <PropertyColumn Property="@(p => p.VendorName)" Title="Vendor" Sortable="true" />
-            <PropertyColumn Property="@(p => p.OrderDate)" Title="Order Date" Sortable="true" />
+            <PropertyColumn Property="@(p => p.OrderDate)" Title="Order Date" Sortable="true"
+                            IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Descending" />
             <PropertyColumn Property="@(p => p.ExpectedDate)" Title="Expected" Sortable="true" />
             <PropertyColumn Property="@(p => p.Total)" Format="N0" Title="Total ($)" Sortable="true" Align="Align.End" />
             <TemplateColumn Title="Status" Sortable="false">
@@ -90,6 +99,101 @@ else
                 p.VendorNumber.Contains(s, StringComparison.OrdinalIgnoreCase));
         }
         _filtered = q.AsQueryable();
+    }
+
+    // ---------------- Drill-down dialogs ----------------
+
+    private async Task ShowDrilldown(ProcurementDrilldownDialog.Args args)
+    {
+        var parameters = new DialogParameters
+        {
+            Title = args.Title,
+            Width = "820px",
+            PrimaryAction = "Close",
+            SecondaryAction = null
+        };
+        await DialogService.ShowDialogAsync<ProcurementDrilldownDialog>(args, parameters);
+    }
+
+    private async Task ShowOpenValue()
+    {
+        var orders = _all.Where(p => p.Status != PoStatus.Received).ToList();
+        var groups = orders.GroupBy(p => p.Status).OrderBy(g => g.Key).ToList();
+        await ShowDrilldown(new ProcurementDrilldownDialog.Args
+        {
+            Title = "Open PO Value",
+            Subtitle = $"{Fmt.Money(orders.Sum(p => p.Total))} across {orders.Count} POs not yet received.",
+            Orders = orders,
+            Kind = ProcurementDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "Open value ($)",
+            Labels = groups.Select(g => g.Key.ToString()).ToArray(),
+            Data = groups.Select(g => g.Sum(p => p.Total)).ToArray(),
+            MoneyAxis = true
+        });
+    }
+
+    private async Task ShowAllOrders()
+    {
+        var groups = _all.GroupBy(p => p.Status).OrderBy(g => g.Key).ToList();
+        await ShowDrilldown(new ProcurementDrilldownDialog.Args
+        {
+            Title = "Purchase Orders by Status",
+            Subtitle = $"{_all.Count} total POs worth {Fmt.Money(_all.Sum(p => p.Total))}.",
+            Orders = _all,
+            Kind = ProcurementDrilldownDialog.ChartKind.Doughnut,
+            DatasetLabel = "POs",
+            Labels = groups.Select(g => g.Key.ToString()).ToArray(),
+            Data = groups.Select(g => (decimal)g.Count()).ToArray()
+        });
+    }
+
+    private async Task ShowPendingApproval()
+    {
+        var orders = _all.Where(p => p.ApprovalStatus != "Approved").ToList();
+        var groups = orders.GroupBy(p => p.ApprovalStatus).OrderByDescending(g => g.Count()).ToList();
+        await ShowDrilldown(new ProcurementDrilldownDialog.Args
+        {
+            Title = "POs Pending Approval",
+            Subtitle = $"{orders.Count} POs awaiting approval worth {Fmt.Money(orders.Sum(p => p.Total))}.",
+            Orders = orders,
+            Kind = ProcurementDrilldownDialog.ChartKind.Doughnut,
+            DatasetLabel = "POs",
+            Labels = groups.Select(g => g.Key).ToArray(),
+            Data = groups.Select(g => (decimal)g.Count()).ToArray()
+        });
+    }
+
+    private async Task ShowVendors()
+    {
+        var top = _all.GroupBy(p => p.VendorName)
+            .Select(g => new { Name = g.Key, Value = g.Sum(p => p.Total) })
+            .OrderByDescending(x => x.Value)
+            .Take(10)
+            .ToList();
+        await ShowDrilldown(new ProcurementDrilldownDialog.Args
+        {
+            Title = "Top Vendors by PO Value",
+            Subtitle = $"{_vendorCount} distinct vendors; showing the top {top.Count} by total PO value.",
+            Orders = _all,
+            Kind = ProcurementDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "Total value ($)",
+            Labels = top.Select(x => x.Name).ToArray(),
+            Data = top.Select(x => x.Value).ToArray(),
+            MoneyAxis = true
+        });
+    }
+
+    private async Task OpenOrder(PurchaseOrder? order)
+    {
+        if (order is null) return;
+        var parameters = new DialogParameters
+        {
+            Title = $"PO {order.Number}",
+            Width = "560px",
+            PrimaryAction = "Close",
+            SecondaryAction = null
+        };
+        await DialogService.ShowDialogAsync<PoDetailDialog>(order, parameters);
     }
 
     private async Task Export()

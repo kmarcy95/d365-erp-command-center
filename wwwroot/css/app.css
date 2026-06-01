@@ -1,10 +1,41 @@
 :root {
     --afc-accent: #0f6cbd;
-    --afc-accent-strong: #115ea3;
+    --afc-accent-strong: #0d5aa0;
+    --afc-accent-weak: #eaf3fb;
     --afc-maxw: 1320px;
+
+    /* Slate neutral ramp (semantic surfaces / text / borders) */
+    --n-0: #ffffff;
+    --n-50: #f8fafc;
+    --n-100: #f1f5f9;
+    --n-200: #e6ebf2;
+    --n-300: #d2dae5;
+    --n-400: #94a3b8;
+    --n-500: #64748b;
+    --n-600: #475569;
+    --n-700: #334155;
+    --n-900: #0f172a;
+
+    /* Semantic */
+    --surface: var(--n-0);
+    --surface-2: var(--n-50);
+    --border: var(--n-200);
+    --text: #1e293b;
+    --text-muted: var(--n-500);
+
+    /* Elevation scale */
+    --shadow-sm: 0 1px 2px rgba(15,23,42,.06), 0 1px 1px rgba(15,23,42,.04);
+    --shadow-md: 0 4px 12px rgba(15,23,42,.08), 0 1px 3px rgba(15,23,42,.05);
+    --shadow-lg: 0 14px 36px rgba(15,23,42,.14);
+
+    /* Radius */
+    --radius: 10px;
+    --radius-lg: 14px;
+
+    --font-ui: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
 }
 
-html, body { margin: 0; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+html, body { margin: 0; font-family: var(--font-ui); color: var(--text); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
 
 /* ---------- Loading splash ---------- */
 .app-loading { height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; background: #faf9f8; color: #605e5c; }
@@ -322,3 +353,118 @@ html, body { margin: 0; font-family: 'Segoe UI', system-ui, -apple-system, sans-
     .kpi-card, .grid-wrap, .gov-banner, .chart-card { break-inside: avoid; box-shadow: none !important; border: 1px solid #ddd !important; }
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* ============================================================
+   MODERNIZATION LAYER (ui-ux-pro-max) — enterprise analytics polish.
+   Semantic tokens, consistent elevation, tabular numerals,
+   refined typography/spacing. Loaded last so it wins the cascade.
+   ============================================================ */
+
+/* ---- App shell ---- */
+.app-content { background: var(--surface-2); }
+.content-inner { padding: 1.75rem 2rem 3.5rem; }
+.nav-shell { background: var(--surface); border-right: 1px solid var(--border); }
+
+.app-header {
+    background: linear-gradient(95deg, #0d5aa0 0%, #1577cf 100%) !important;
+    box-shadow: 0 1px 0 rgba(15,23,42,.06), var(--shadow-sm);
+    border-bottom: 1px solid rgba(255,255,255,.08);
+    min-height: 56px;
+}
+.app-header .brand-mark { box-shadow: inset 0 0 0 1px rgba(255,255,255,.15); border-radius: 10px; }
+.app-header .brand-title { letter-spacing: -.01em; }
+
+.app-footer { background: var(--surface); border-top: 1px solid var(--border); color: var(--text-muted); padding: .7rem 2rem; }
+
+/* ---- Typography / headings ---- */
+.page-header h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -.02em; color: var(--n-900); }
+h2 { font-weight: 700; letter-spacing: -.01em; color: var(--n-900); }
+.section-title { font-weight: 700; letter-spacing: -.01em; color: var(--n-900); }
+
+/* Tabular numerals everywhere finance figures appear (prevents column jitter) */
+.kpi-value, .afc-table td.num, .afc-table th.num, .grid-wrap, .gov-fact .gf-v,
+.page-meta .pm-val, .util-wrap { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+
+/* ---- KPI cards ---- */
+.kpi-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    padding: 1.1rem 1.25rem;
+    transition: box-shadow .15s ease, transform .1s ease, border-color .15s ease;
+}
+.kpi-card .kpi-label { color: var(--text-muted); font-size: .74rem; font-weight: 600; letter-spacing: .06em; }
+.kpi-card .kpi-value { font-size: 1.75rem; font-weight: 700; letter-spacing: -.02em; color: var(--n-900); }
+.kpi-card .kpi-sub { color: var(--text-muted); }
+.kpi-card .kpi-delta { font-weight: 600; font-size: .82rem; }
+.kpi-card--clickable { position: relative; }
+.kpi-card--clickable::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--afc-accent); border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+    opacity: 0; transition: opacity .15s ease;
+}
+.kpi-card--clickable:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--n-300); }
+.kpi-card--clickable:hover::before { opacity: 1; }
+.kpi-card .kpi-drill { color: var(--afc-accent); font-weight: 600; }
+
+/* ---- Charts ---- */
+.chart-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 1.1rem 1.25rem;
+}
+.chart-card h3 { font-weight: 600; color: var(--n-700); letter-spacing: -.01em; }
+
+/* ---- Data grids & tables ---- */
+.grid-wrap { border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+.grid-wrap ::deep .fluent-data-grid, .grid-wrap fluent-data-grid { --fill-color: var(--surface); }
+.grid-wrap ::deep .col-header, .grid-wrap ::deep th { font-weight: 600; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: .04em; font-size: .72rem; }
+.grid-row-clickable:hover { background: var(--afc-accent-weak); }
+
+.afc-table th { background: var(--surface-2); color: var(--text-muted); text-transform: uppercase;
+    letter-spacing: .04em; font-size: .72rem; border-bottom: 1px solid var(--border); }
+.afc-table td { border-bottom: 1px solid var(--n-100); }
+.afc-table tbody tr:hover { background: var(--afc-accent-weak); }
+.afc-table tr.total td, .afc-table tfoot td { border-top: 2px solid var(--border); background: var(--surface-2); }
+
+/* ---- Page meta strip ---- */
+.page-meta { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--afc-accent);
+    border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+
+/* ---- Filter bar / inputs ---- */
+.filter-bar { border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+.filter-field select, .filter-field input {
+    border: 1px solid var(--n-300); border-radius: 8px; color: var(--text); transition: border-color .12s, box-shadow .12s;
+}
+.filter-field select:focus, .filter-field input:focus {
+    outline: none; border-color: var(--afc-accent); box-shadow: 0 0 0 3px rgba(15,108,189,.15);
+}
+
+/* ---- Scale toggle ---- */
+.scale-toggle { border: 1px solid var(--n-300); border-radius: 9px; box-shadow: var(--shadow-sm); overflow: hidden; }
+.scale-toggle button { font-weight: 600; color: var(--text-muted); transition: background .12s, color .12s; }
+.scale-toggle button.is-active { background: var(--afc-accent); color: #fff; }
+
+/* ---- Governance banner ---- */
+.gov-banner { border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }
+
+/* ---- Buttons (Fluent stealth/accent get a touch more polish) ---- */
+.scale-toggle button:hover:not(.is-active) { background: var(--surface-2); color: var(--text); }
+
+/* ---- Empty / error ---- */
+.empty-state { padding: 3rem 1rem; }
+.empty-state .es-emoji { font-size: 2.4rem; opacity: .8; }
+
+/* ---- Global focus ring (a11y) ---- */
+a:focus-visible, button:focus-visible, [tabindex]:focus-visible,
+.env-opt:focus-visible, .scale-toggle button:focus-visible {
+    outline: 2px solid var(--afc-accent); outline-offset: 2px; border-radius: 6px;
+}
+
+/* ---- Dialog content polish ---- */
+.dlg-sub { color: var(--text-muted); }
+.dlg-table th { text-transform: uppercase; letter-spacing: .04em; font-size: .72rem; }
+
+/* ---- Hero (home) refinement ---- */
+.hero { border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }

@@ -1,29 +1,51 @@
 @page "/accounts-receivable"
 @inject AppData AppData
+@inject UiState Ui
 @inject IJSRuntime JS
 @inject IDialogService DialogService
 <PageTitle>Accounts Receivable · D365 ERP Command Center</PageTitle>
+
+<div class="print-only print-header">
+    <div class="ph-co">Alamo Foods Co.</div>
+    <div class="ph-report">Accounts Receivable — Open Invoices &amp; Aging</div>
+    <div class="ph-meta">
+        Fiscal period @Fiscal.PeriodLabel(AppData.Data.AsOf) · Currency @AppInfo.BaseCurrency ·
+        Environment @Ui.EnvName · Generated @DateTime.Now.ToString("MMM d, yyyy h:mm tt")
+    </div>
+</div>
 
 <div class="page-header">
     <div>
         <h1>Accounts Receivable</h1>
         <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">D365 ERP Analyst</FluentBadge>
     </div>
-    <FluentButton Appearance="Appearance.Accent" OnClick="Export">Export CSV</FluentButton>
+    <div style="display:flex;gap:.5rem;align-items:center">
+        <div class="scale-toggle" role="group" aria-label="Display units">
+            <button class="@(_scale == MoneyScale.Units ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Units)">$</button>
+            <button class="@(_scale == MoneyScale.Thousands ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Thousands)">$K</button>
+            <button class="@(_scale == MoneyScale.Millions ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Millions)">$M</button>
+        </div>
+        <FluentButton Appearance="Appearance.Stealth" OnClick="Print">🖨 Print / PDF</FluentButton>
+        <FluentButton Appearance="Appearance.Accent" OnClick="Export">⬇ Export CSV</FluentButton>
+    </div>
 </div>
 
 <PageMeta AsOf="@AppData.Data.AsOf" GeneratedAtUtc="@AppData.Data.GeneratedAtUtc" Module="Accounts receivable" />
 
-@if (!_ready)
+@if (_error)
+{
+    <ErrorBanner Message="Couldn't load accounts receivable. Use the account menu in the header to reset the demo data." />
+}
+else if (!_ready)
 {
     <Skeleton Variant="page" />
 }
 else
 {
     <div class="kpi-grid">
-        <KpiCard Label="Outstanding Receivable" Value="@Fmt.Money(_outstanding)" Sub="Open + overdue invoices"
+        <KpiCard Label="Outstanding Receivable" Value="@Fmt.Money(_outstanding, _scale)" Sub="Open + overdue invoices"
                  Clickable="true" OnClick="ShowOutstanding" />
-        <KpiCard Label="Overdue" Value="@Fmt.Money(_overdueValue)" Sub="Past due date" Positive="false"
+        <KpiCard Label="Overdue" Value="@Fmt.Money(_overdueValue, _scale)" Sub="@($"{_overduePct:0}% of outstanding · target <5%")" Positive="false"
                  Clickable="true" OnClick="ShowOverdue" />
         <KpiCard Label="In Collections" Value="@Fmt.Num(_inCollections)" Sub="Escalated invoices" Positive="false"
                  Clickable="true" OnClick="ShowCollections" />
@@ -35,45 +57,100 @@ else
         <Chart Title="Outstanding receivable by aging bucket" Type="bar" Labels="@_agingLabels" Series="@_agingSeries" />
     </div>
 
-    <FluentSearch @bind-Value="_search" @bind-Value:after="Apply" Placeholder="Search customer name or number…" Class="afc-search" />
-
-    <p class="grid-hint">Click any row for the invoice detail.</p>
-    <div class="grid-wrap">
-        <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="ArInvoice"
-                        OnRowClick="@(async (FluentDataGridRow<ArInvoice> row) => await OpenInvoice(row.Item))"
-                        RowClass="@(_ => "grid-row-clickable")">
-            <PropertyColumn Property="@(i => i.Number)" Title="Number" Sortable="true" />
-            <PropertyColumn Property="@(i => i.CustomerName)" Title="Customer" Sortable="true" />
-            <PropertyColumn Property="@(i => i.Segment)" Title="Segment" Sortable="true" />
-            <PropertyColumn Property="@(i => i.InvoiceDate)" Title="Invoice Date" Sortable="true"
-                            IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Descending" />
-            <PropertyColumn Property="@(i => i.DueDate)" Title="Due Date" Sortable="true" />
-            <PropertyColumn Property="@(i => i.Amount)" Format="N0" Title="Amount ($)" Sortable="true" Align="Align.End" />
-            <PropertyColumn Property="@(i => i.AgeBucket)" Title="Bucket" Sortable="true" />
-            <TemplateColumn Title="Status" Sortable="false">
-                <StatusBadge Text="@context.Status.ToString()" Kind="@StatusKind(context.Status)" />
-            </TemplateColumn>
-            <TemplateColumn Title="Collection" Sortable="false">
-                <StatusBadge Text="@context.CollectionStatus" Kind="@CollectionKind(context.CollectionStatus)" />
-            </TemplateColumn>
-        </FluentDataGrid>
+    <div class="filter-bar">
+        <div class="filter-field">
+            <label>Status</label>
+            <select value="@_status" @onchange="@(e => { _status = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All statuses</option>
+                @foreach (var s in Enum.GetNames<InvoiceStatus>()) { <option value="@s">@s</option> }
+            </select>
+        </div>
+        <div class="filter-field">
+            <label>Collection</label>
+            <select value="@_collection" @onchange="@(e => { _collection = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All</option>
+                @foreach (var c in _collections) { <option value="@c">@c</option> }
+            </select>
+        </div>
+        <div class="filter-field">
+            <label>Segment</label>
+            <select value="@_segment" @onchange="@(e => { _segment = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All segments</option>
+                @foreach (var s in _segments) { <option value="@s">@s</option> }
+            </select>
+        </div>
+        <div class="filter-field" style="flex:1 1 160px">
+            <label>Search</label>
+            <input value="@_search" @oninput="@(e => { _search = e.Value?.ToString() ?? ""; Apply(); })" placeholder="Customer name or number…" />
+        </div>
+        <button class="fb-reset" @onclick="ResetFilters">Reset filters</button>
     </div>
 
-    <FluentPaginator State="@_pagination" />
+    <div class="thr-legend">
+        <span class="tl"><span class="sw sw-bad"></span> Overdue or in collections</span>
+        <span class="tl"><span class="sw sw-warn"></span> Payment reminder sent</span>
+    </div>
+
+    <p class="grid-hint">@_filteredCount of @_all.Count invoices shown · click any row for the invoice detail.</p>
+
+    @if (_filteredCount == 0)
+    {
+        <div class="grid-wrap">
+            <EmptyState Emoji="📄" Title="No matching invoices"
+                        Message="No receivable invoices match the current filters. Try clearing a filter or resetting." />
+        </div>
+    }
+    else
+    {
+        <div class="grid-wrap">
+            <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="ArInvoice"
+                            OnRowClick="@(async (FluentDataGridRow<ArInvoice> row) => await OpenInvoice(row.Item))"
+                            RowClass="@RowClass">
+                <PropertyColumn Property="@(i => i.Number)" Title="Number" Sortable="true" />
+                <PropertyColumn Property="@(i => i.CustomerName)" Title="Customer" Sortable="true" />
+                <PropertyColumn Property="@(i => i.Segment)" Title="Segment" Sortable="true" />
+                <PropertyColumn Property="@(i => i.InvoiceDate)" Title="Invoice Date" Sortable="true"
+                                IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Descending" />
+                <PropertyColumn Property="@(i => i.DueDate)" Title="Due Date" Sortable="true" />
+                <TemplateColumn Title="Amount ($)" Align="Align.End"
+                                SortBy="@(GridSort<ArInvoice>.ByAscending(i => i.Amount))">
+                    @Fmt.Money(context.Amount, _scale)
+                </TemplateColumn>
+                <PropertyColumn Property="@(i => i.AgeBucket)" Title="Bucket" Sortable="true" />
+                <TemplateColumn Title="Status" Sortable="false">
+                    <StatusBadge Text="@context.Status.ToString()" Kind="@StatusKind(context.Status)" />
+                </TemplateColumn>
+                <TemplateColumn Title="Collection" Sortable="false">
+                    <StatusBadge Text="@context.CollectionStatus" Kind="@CollectionKind(context.CollectionStatus)" />
+                </TemplateColumn>
+            </FluentDataGrid>
+        </div>
+
+        <FluentPaginator State="@_pagination" />
+    }
 }
 
 @code {
     private bool _ready;
+    private bool _error;
+    private MoneyScale _scale = MoneyScale.Units;
     private string _search = "";
+    private string _status = "";
+    private string _collection = "";
+    private string _segment = "";
 
     private List<ArInvoice> _all = new();
     private IQueryable<ArInvoice> _filtered = Enumerable.Empty<ArInvoice>().AsQueryable();
+    private int _filteredCount;
     private readonly PaginationState _pagination = new() { ItemsPerPage = 15 };
 
     private decimal _outstanding;
     private decimal _overdueValue;
+    private double _overduePct;
     private int _inCollections;
     private int _customerCount;
+    private string[] _collections = Array.Empty<string>();
+    private string[] _segments = Array.Empty<string>();
 
     private static readonly string[] BucketOrder = { "Current", "1-30", "31-60", "61-90", "90+" };
 
@@ -98,29 +175,55 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        await AppData.InitializeAsync();
-        _all = AppData.Data.ArInvoices.ToList();
-
-        var open = OpenInvoices;
-        _outstanding = open.Sum(i => i.Amount);
-        _overdueValue = _all.Where(i => i.Status == InvoiceStatus.Overdue).Sum(i => i.Amount);
-        _inCollections = _all.Count(i => i.CollectionStatus == "In Collections");
-        _customerCount = open.Select(i => i.CustomerNumber).Distinct().Count();
-
-        _agingLabels = BucketOrder;
-        _agingSeries = new List<ChartSeries>
+        try
         {
-            new ChartSeries("Outstanding ($)",
-                BucketOrder.Select(b => (double)open.Where(i => i.AgeBucket == b).Sum(i => i.Amount)).ToArray())
-        };
+            await AppData.InitializeAsync();
+            _all = AppData.Data.ArInvoices.ToList();
 
+            var open = OpenInvoices;
+            _outstanding = open.Sum(i => i.Amount);
+            _overdueValue = _all.Where(i => i.Status == InvoiceStatus.Overdue).Sum(i => i.Amount);
+            _overduePct = _outstanding == 0 ? 0 : (double)(_overdueValue / _outstanding) * 100;
+            _inCollections = _all.Count(i => i.CollectionStatus == "In Collections");
+            _customerCount = open.Select(i => i.CustomerNumber).Distinct().Count();
+            _collections = _all.Select(i => i.CollectionStatus).Where(s => !string.IsNullOrEmpty(s)).Distinct().OrderBy(x => x).ToArray();
+            _segments = _all.Select(i => i.Segment).Where(s => !string.IsNullOrEmpty(s)).Distinct().OrderBy(x => x).ToArray();
+
+            _agingLabels = BucketOrder;
+            _agingSeries = new List<ChartSeries>
+            {
+                new ChartSeries("Outstanding ($)",
+                    BucketOrder.Select(b => (double)open.Where(i => i.AgeBucket == b).Sum(i => i.Amount)).ToArray())
+            };
+
+            Apply();
+            _ready = true;
+        }
+        catch
+        {
+            _error = true;
+        }
+    }
+
+    private string RowClass(ArInvoice i)
+    {
+        if (i.CollectionStatus == "In Collections" || i.Status == InvoiceStatus.Overdue) return "grid-row-clickable var-row-bad";
+        if (i.CollectionStatus == "Reminded") return "grid-row-clickable var-row-warn";
+        return "grid-row-clickable";
+    }
+
+    private void ResetFilters()
+    {
+        _search = _status = _collection = _segment = "";
         Apply();
-        _ready = true;
     }
 
     private void Apply()
     {
         var q = _all.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(_status)) q = q.Where(i => i.Status.ToString() == _status);
+        if (!string.IsNullOrWhiteSpace(_collection)) q = q.Where(i => i.CollectionStatus == _collection);
+        if (!string.IsNullOrWhiteSpace(_segment)) q = q.Where(i => i.Segment == _segment);
         if (!string.IsNullOrWhiteSpace(_search))
         {
             var s = _search.Trim();
@@ -128,16 +231,20 @@ else
                 i.CustomerName.Contains(s, StringComparison.OrdinalIgnoreCase) ||
                 i.CustomerNumber.Contains(s, StringComparison.OrdinalIgnoreCase));
         }
-        _filtered = q.AsQueryable();
+        var list = q.ToList();
+        _filteredCount = list.Count;
+        _filtered = list.AsQueryable();
     }
 
-    // ---------------- Drill-down dialogs ----------------
+    private async Task Print() => await JS.InvokeVoidAsync("afcPrint", "");
+
+    // ---------------- Drill-down dialogs (with breadcrumb in title) ----------------
 
     private async Task ShowDrilldown(ArDrilldownDialog.Args args)
     {
         var parameters = new DialogParameters
         {
-            Title = args.Title,
+            Title = "Accounts Receivable ▸ " + args.Title,
             Width = "820px",
             PrimaryAction = "Close",
             SecondaryAction = null
@@ -223,7 +330,7 @@ else
         if (inv is null) return;
         var parameters = new DialogParameters
         {
-            Title = $"Invoice {inv.Number}",
+            Title = $"Accounts Receivable ▸ Invoice {inv.Number}",
             Width = "560px",
             PrimaryAction = "Close",
             SecondaryAction = null

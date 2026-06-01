@@ -1,0 +1,121 @@
+@implements IDisposable
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+@if (_open)
+{
+    <div class="cmdp-overlay" @onclick="Close">
+        <div class="cmdp-panel" @onclick:stopPropagation="true">
+            <input id="cmdp-input" class="cmdp-input" placeholder="Jump to a page…  (type to filter)"
+                   @bind="_query" @bind:event="oninput" @onkeydown="OnKey" autocomplete="off" />
+            <div class="cmdp-list">
+                @if (Filtered.Count == 0)
+                {
+                    <div class="cmdp-empty">No matches</div>
+                }
+                else
+                {
+                    @for (int i = 0; i < Filtered.Count; i++)
+                    {
+                        var idx = i;
+                        var item = Filtered[i];
+                        <div class="cmdp-item @(_active == idx ? "active" : "")"
+                             @onclick="@(() => Go(item))"
+                             @onmouseenter="@(() => _active = idx)">
+                            <span class="cmdp-item-title">@item.Title</span>
+                            <span class="cmdp-item-group">@item.Group</span>
+                        </div>
+                    }
+                }
+            </div>
+            <div class="cmdp-hint">↑↓ to navigate · ↵ to open · Esc to close</div>
+        </div>
+    </div>
+}
+
+@code {
+    private record Entry(string Title, string Group, string Href);
+
+    private bool _open;
+    private string _query = "";
+    private int _active;
+    private DotNetObjectReference<CommandPalette>? _ref;
+
+    private static readonly Entry[] All =
+    {
+        new("Overview", "", ""),
+        new("Executive Dashboard", "Executive", "executive-dashboard"),
+        new("Financial Analytics", "Executive", "financial-analytics"),
+        new("General Ledger", "Finance", "general-ledger"),
+        new("Accounts Payable", "Finance", "accounts-payable"),
+        new("Accounts Receivable", "Finance", "accounts-receivable"),
+        new("Budget vs Actual", "Finance", "budget"),
+        new("Procurement", "Supply Chain", "procurement"),
+        new("Inventory", "Supply Chain", "inventory"),
+        new("Sales Orders", "Supply Chain", "sales-orders"),
+        new("Roadmap & Gantt", "Implementation", "roadmap"),
+        new("RAID Log", "Implementation", "raid"),
+        new("Fit-Gap Analysis", "Implementation", "fit-gap"),
+        new("Traceability Matrix", "Implementation", "rtm"),
+        new("Test & UAT", "Implementation", "test-management"),
+        new("Status Reports", "Implementation", "status-reports"),
+        new("Process Catalog", "Process", "process-catalog"),
+        new("About this demo", "", "about"),
+    };
+
+    private List<Entry> Filtered => string.IsNullOrWhiteSpace(_query)
+        ? All.ToList()
+        : All.Where(e =>
+            e.Title.Contains(_query, StringComparison.OrdinalIgnoreCase) ||
+            e.Group.Contains(_query, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _ref = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("afcPalette.register", _ref);
+        }
+    }
+
+    [JSInvokable]
+    public async Task Toggle()
+    {
+        _open = !_open;
+        if (_open) { _query = ""; _active = 0; }
+        StateHasChanged();
+        if (_open)
+        {
+            await Task.Yield();
+            await JS.InvokeVoidAsync("afcPalette.focus", "cmdp-input");
+        }
+    }
+
+    [JSInvokable]
+    public void Close()
+    {
+        if (!_open) return;
+        _open = false;
+        StateHasChanged();
+    }
+
+    private void OnKey(KeyboardEventArgs e)
+    {
+        var list = Filtered;
+        if (list.Count == 0) return;
+        switch (e.Key)
+        {
+            case "ArrowDown": _active = (_active + 1) % list.Count; break;
+            case "ArrowUp": _active = (_active - 1 + list.Count) % list.Count; break;
+            case "Enter": Go(list[Math.Clamp(_active, 0, list.Count - 1)]); break;
+        }
+    }
+
+    private void Go(Entry e)
+    {
+        _open = false;
+        Nav.NavigateTo(e.Href);
+    }
+
+    public void Dispose() => _ref?.Dispose();
+}

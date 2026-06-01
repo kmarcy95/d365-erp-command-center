@@ -1,4 +1,5 @@
-<FluentCard Class="kpi-card">
+<FluentCard Class="@CardClass" role="@(Clickable ? "button" : null)" tabindex="@(Clickable ? "0" : null)"
+            @onclick="HandleClick" @onkeydown="HandleKey">
     <div class="kpi-label">@Label</div>
     <div class="kpi-value">@Value</div>
     @if (!string.IsNullOrEmpty(Delta))
@@ -9,6 +10,10 @@
     {
         <div class="kpi-sub">@Sub</div>
     }
+    @if (Clickable)
+    {
+        <div class="kpi-drill">View details →</div>
+    }
 </FluentCard>
 
 @code {
@@ -17,4 +22,19 @@
     [Parameter] public string? Delta { get; set; }
     [Parameter] public bool Positive { get; set; } = true;
     [Parameter] public string? Sub { get; set; }
+    [Parameter] public bool Clickable { get; set; }
+    [Parameter] public EventCallback OnClick { get; set; }
+
+    private string CardClass => Clickable ? "kpi-card kpi-card--clickable" : "kpi-card";
+
+    private async Task HandleClick()
+    {
+        if (Clickable) await OnClick.InvokeAsync();
+    }
+
+    private async Task HandleKey(KeyboardEventArgs e)
+    {
+        if (Clickable && (e.Key == "Enter" || e.Key == " " || e.Key == "Spacebar"))
+            await OnClick.InvokeAsync();
+    }
 }

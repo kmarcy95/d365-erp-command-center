@@ -1,0 +1,126 @@
+@implements IDialogContentComponent<KpiDrilldownDialog.Args>
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<div class="dlg-content">
+    <p class="dlg-sub">@Content.Subtitle</p>
+
+    <div class="chart-canvas-wrap">
+        <canvas id="@_canvasId"></canvas>
+    </div>
+
+    <table class="afc-table dlg-table">
+        <thead>
+            <tr>
+                <th>Number</th>
+                <th>Customer</th>
+                <th>Segment</th>
+                <th>Order Date</th>
+                <th class="num">Total ($)</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var o in Content.Orders.OrderByDescending(o => o.OrderDate))
+            {
+                <tr>
+                    <td>@o.Number</td>
+                    <td>@o.CustomerName</td>
+                    <td>@o.Segment</td>
+                    <td>@o.OrderDate.ToString("yyyy-MM-dd")</td>
+                    <td class="num">@Fmt.Num(o.Total)</td>
+                    <td><StatusBadge Text="@o.Status.ToString()" Kind="@StatusKind(o.Status)" /></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter] public Args Content { get; set; } = default!;
+
+    private readonly string _canvasId = "kpi-chart-" + Guid.NewGuid().ToString("N");
+    private bool _rendered;
+
+    public enum ChartKind { Bar, Doughnut }
+
+    public class Args
+    {
+        public string Title { get; set; } = "";
+        public string Subtitle { get; set; } = "";
+        public List<SalesOrder> Orders { get; set; } = new();
+        public ChartKind Kind { get; set; } = ChartKind.Bar;
+        public string DatasetLabel { get; set; } = "";
+        public string[] Labels { get; set; } = Array.Empty<string>();
+        public decimal[] Data { get; set; } = Array.Empty<decimal>();
+        public bool MoneyAxis { get; set; }
+    }
+
+    private static readonly string[] Palette =
+        { "#0078d4", "#107c10", "#ca5010", "#d13438", "#8764b8", "#038387", "#a4262c", "#5c2e91", "#498205", "#c19c00" };
+
+    private static string StatusKind(SoStatus s) => s switch
+    {
+        SoStatus.Invoiced => "good",
+        SoStatus.Shipped => "info",
+        SoStatus.Picked => "warn",
+        _ => "neutral"
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _rendered) return;
+        _rendered = true;
+
+        var data = Content.Data.Select(v => (double)v).ToArray();
+        var isDoughnut = Content.Kind == ChartKind.Doughnut;
+
+        object backgroundColor = isDoughnut
+            ? Content.Labels.Select((_, i) => Palette[i % Palette.Length]).ToArray()
+            : "#0078d4";
+
+        // Bar charts get a y-axis; doughnuts omit scales entirely.
+        object options = isDoughnut
+            ? (object)new
+            {
+                responsive = true,
+                maintainAspectRatio = false,
+                plugins = new { legend = new { display = true, position = "bottom" } }
+            }
+            : (object)new
+            {
+                responsive = true,
+                maintainAspectRatio = false,
+                plugins = new { legend = new { display = false, position = "bottom" } },
+                scales = new { y = new { beginAtZero = true } }
+            };
+
+        object config = new
+        {
+            type = isDoughnut ? "doughnut" : "bar",
+            data = new
+            {
+                labels = Content.Labels,
+                datasets = new[]
+                {
+                    new
+                    {
+                        label = Content.DatasetLabel,
+                        data,
+                        backgroundColor,
+                        borderWidth = 0
+                    }
+                }
+            },
+            options
+        };
+
+        await JS.InvokeVoidAsync("afcCharts.render", _canvasId, config);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("afcCharts.destroy", _canvasId); }
+        catch { /* JS runtime may already be gone on teardown */ }
+    }
+}

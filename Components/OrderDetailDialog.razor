@@ -1,0 +1,55 @@
+@implements IDialogContentComponent<SalesOrder>
+
+<div class="dlg-content">
+    <div class="dlg-facts">
+        <div><span class="dlg-fact-label">Customer</span><span>@Content.CustomerName (@Content.CustomerNumber)</span></div>
+        <div><span class="dlg-fact-label">Segment</span><span>@Content.Segment</span></div>
+        <div><span class="dlg-fact-label">Order Date</span><span>@Content.OrderDate.ToString("yyyy-MM-dd")</span></div>
+        <div><span class="dlg-fact-label">Ship Date</span><span>@Content.ShipDate.ToString("yyyy-MM-dd")</span></div>
+        <div><span class="dlg-fact-label">Status</span><span><StatusBadge Text="@Content.Status.ToString()" Kind="@StatusKind(Content.Status)" /></span></div>
+    </div>
+
+    <h4 class="dlg-section">Line Items</h4>
+    <table class="afc-table dlg-table">
+        <thead>
+            <tr>
+                <th>Product</th>
+                <th>Category</th>
+                <th class="num">Qty</th>
+                <th class="num">Unit Price</th>
+                <th class="num">Line Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var l in Content.Lines)
+            {
+                <tr>
+                    <td>@l.Product</td>
+                    <td>@l.Category</td>
+                    <td class="num">@Fmt.Num(l.Qty)</td>
+                    <td class="num">@Fmt.Money1(l.UnitPrice)</td>
+                    <td class="num">@Fmt.Money(l.LineTotal)</td>
+                </tr>
+            }
+            <tr class="total">
+                <td>Order Total</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td class="num">@Fmt.Money(Content.Total)</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter] public SalesOrder Content { get; set; } = default!;
+
+    private static string StatusKind(SoStatus s) => s switch
+    {
+        SoStatus.Invoiced => "good",
+        SoStatus.Shipped => "info",
+        SoStatus.Picked => "warn",
+        _ => "neutral"
+    };
+}

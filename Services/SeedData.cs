@@ -218,6 +218,23 @@ public static class SeedData
         }
     }
 
+    // Alamo Foods Co. finished-goods catalog: (product, category, low-unit-price, high-unit-price).
+    private static readonly (string Product, string Category, int Low, int High)[] SalesCatalog =
+    {
+        ("Mesquite BBQ Sauce 18oz",      "Sauces & Marinades", 18, 34),
+        ("Jalapeño Brine 1gal",          "Sauces & Marinades", 22, 40),
+        ("Chipotle Adobo 12oz",          "Sauces & Marinades", 16, 28),
+        ("Corn Tortilla Flour 50lb",     "Flour & Grains",     28, 46),
+        ("Stone-Ground Masa 25lb",       "Flour & Grains",     24, 38),
+        ("Hill Country Wheat Flour 50lb","Flour & Grains",     26, 42),
+        ("Pecan Praline Spread 16oz",    "Sweet Goods",        20, 36),
+        ("Bluebonnet Honey 24oz",        "Sweet Goods",        24, 44),
+        ("Texas Pepper Blend 8oz",       "Seasonings",         12, 22),
+        ("Smoked Paprika Rub 10oz",      "Seasonings",         14, 26),
+        ("Refried Pinto Beans #10 can",  "Canned Goods",       18, 30),
+        ("Roasted Salsa Verde #10 can",  "Canned Goods",       20, 34),
+    };
+
     private static void BuildSalesOrders(DemoData d)
     {
         for (int i = 0; i < 60; i++)
@@ -225,7 +242,8 @@ public static class SeedData
             var c = Pick(d.Customers);
             var status = Pick(new[] { SoStatus.Open, SoStatus.Picked, SoStatus.Shipped, SoStatus.Shipped, SoStatus.Invoiced, SoStatus.Invoiced });
             var od = AsOf.AddDays(-Rng.Next(1, 75));
-            d.SalesOrders.Add(new SalesOrder
+
+            var order = new SalesOrder
             {
                 Number = $"SO-{80000 + i}",
                 CustomerNumber = c.Number,
@@ -233,9 +251,27 @@ public static class SeedData
                 Segment = c.Segment,
                 OrderDate = od,
                 ShipDate = od.AddDays(Rng.Next(2, 14)),
-                Total = Money(3000, 160000),
                 Status = status
-            });
+            };
+
+            var lineCount = Rng.Next(2, 6);                 // 2–5 distinct lines
+            var used = new HashSet<int>();
+            for (int j = 0; j < lineCount; j++)
+            {
+                int idx;
+                do { idx = Rng.Next(SalesCatalog.Length); } while (!used.Add(idx));
+                var sku = SalesCatalog[idx];
+                order.Lines.Add(new SalesLine
+                {
+                    Product = sku.Product,
+                    Category = sku.Category,
+                    Qty = Rng.Next(20, 600),
+                    UnitPrice = Money(sku.Low, sku.High)
+                });
+            }
+            order.Total = order.Lines.Sum(l => l.LineTotal);
+
+            d.SalesOrders.Add(order);
         }
     }
 

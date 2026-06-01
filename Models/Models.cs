@@ -133,6 +133,15 @@ public class PurchaseOrder
 
 public enum SoStatus { Open, Picked, Shipped, Invoiced }
 
+public class SalesLine
+{
+    public string Product { get; set; } = "";
+    public string Category { get; set; } = "";
+    public int Qty { get; set; }
+    public decimal UnitPrice { get; set; }
+    public decimal LineTotal => Math.Round(Qty * UnitPrice, 2);
+}
+
 public class SalesOrder
 {
     public string Number { get; set; } = "";
@@ -143,6 +152,7 @@ public class SalesOrder
     public DateOnly ShipDate { get; set; }
     public decimal Total { get; set; }
     public SoStatus Status { get; set; }
+    public List<SalesLine> Lines { get; set; } = new();
 }
 
 // ---------- Implementation delivery ----------

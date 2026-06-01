@@ -69,6 +69,27 @@ html, body { margin: 0; font-family: 'Segoe UI', system-ui, -apple-system, sans-
 .page-asof { color: #8a8a8a; font-size: .85rem; }
 .page-header .page-asof { white-space: nowrap; }
 
+/* ---------- Clickable KPI drill-down ---------- */
+.kpi-card--clickable { cursor: pointer; transition: transform .08s ease, box-shadow .12s ease; }
+.kpi-card--clickable:hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(0,0,0,.12); }
+.kpi-card--clickable:focus-visible { outline: 2px solid #0078d4; outline-offset: 2px; }
+.kpi-card .kpi-drill { color: #0078d4; font-size: .76rem; font-weight: 600; margin-top: .5rem; }
+
+/* ---------- Clickable grid rows ---------- */
+.grid-hint { color: #8a8a8a; font-size: .82rem; margin: 0 0 .5rem; }
+.grid-row-clickable { cursor: pointer; }
+.grid-row-clickable:hover { background: #f3f9fd; }
+
+/* ---------- Dialog drill-down content ---------- */
+.dlg-content { min-width: 0; }
+.dlg-sub { color: #605e5c; font-size: .9rem; margin: 0 0 1rem; }
+.dlg-content .chart-canvas-wrap { height: 240px; margin-bottom: 1rem; }
+.dlg-table { font-size: .84rem; }
+.dlg-section { margin: 1.1rem 0 .5rem; font-size: .95rem; }
+.dlg-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .6rem 1.2rem; }
+.dlg-facts > div { display: flex; flex-direction: column; gap: .15rem; }
+.dlg-facts .dlg-fact-label { color: #8a8a8a; font-size: .72rem; text-transform: uppercase; letter-spacing: .4px; }
+
 /* ---------- Data grids ---------- */
 .grid-search { margin-bottom: .8rem; max-width: 340px; width: 100%; }
 .grid-wrap { background: var(--neutral-layer-1, #fff); border: 1px solid var(--neutral-stroke-rest, #edebe9); border-radius: 8px; overflow: auto; }

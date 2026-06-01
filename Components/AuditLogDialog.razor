@@ -1,0 +1,32 @@
+@implements IDialogContentComponent<List<AuditEntry>>
+
+<div class="dlg-content">
+    <p class="dlg-sub">Recent activity across modules — user actions and automated data syncs. Timestamps shown in your local time.</p>
+    <table class="afc-table audit-list">
+        <thead>
+            <tr>
+                <th>When</th>
+                <th>User</th>
+                <th>Module</th>
+                <th>Action</th>
+                <th>Detail</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var e in Content.OrderByDescending(a => a.Timestamp))
+            {
+                <tr>
+                    <td class="au-time">@e.Timestamp.ToLocalTime().ToString("MMM d, h:mm tt")</td>
+                    <td><span class="au-user">@e.User</span><br /><span style="color:#8a8a8a;font-size:.74rem">@e.Role</span></td>
+                    <td><span class="au-mod">@e.Module</span></td>
+                    <td>@e.Action</td>
+                    <td>@e.Detail</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter] public List<AuditEntry> Content { get; set; } = new();
+}

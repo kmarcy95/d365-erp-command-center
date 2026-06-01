@@ -1,0 +1,37 @@
+@inject UiState Ui
+@implements IDisposable
+
+@*
+   Provenance strip shown under a page header on data pages: as-of date,
+   last sync, fiscal period status, base currency and the active environment.
+*@
+<div class="page-meta">
+    <span class="pm-item"><span class="pm-label">As of</span>
+        <span class="pm-val">@AsOf.ToString("MMM d, yyyy")</span></span>
+    <span class="pm-item pm-sync"><span class="pm-live"></span>
+        <span class="pm-label">Last sync</span>
+        <span class="pm-val">@Fiscal.Relative(GeneratedAtUtc)</span></span>
+    <span class="pm-item"><span class="pm-label">Period</span>
+        <span class="pm-val @(IsOpen ? "pm-open" : "pm-closed")">@Fiscal.PeriodLabel(AsOf)</span></span>
+    @if (!string.IsNullOrEmpty(Module))
+    {
+        <span class="pm-item"><span class="pm-label">Module</span><span class="pm-val">@Module</span></span>
+    }
+    <span class="pm-item"><span class="pm-label">Currency</span><span class="pm-val">@AppInfo.BaseCurrency</span></span>
+    <span class="pm-item"><span class="pm-label">Env</span><span class="pm-val">@Ui.EnvName</span></span>
+</div>
+
+@code {
+    /// <summary>Dataset "as of" date.</summary>
+    [Parameter] public DateOnly AsOf { get; set; }
+    /// <summary>When the dataset was generated/synced (UTC) — drives "last sync".</summary>
+    [Parameter] public DateTime GeneratedAtUtc { get; set; }
+    /// <summary>Optional D365 module label, e.g. "General ledger".</summary>
+    [Parameter] public string? Module { get; set; }
+
+    private bool IsOpen => Fiscal.PeriodStatus(AsOf) == "Open";
+
+    protected override void OnInitialized() => Ui.Changed += OnChanged;
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Ui.Changed -= OnChanged;
+}

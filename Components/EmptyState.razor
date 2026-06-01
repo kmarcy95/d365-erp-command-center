@@ -1,0 +1,13 @@
+<div class="empty-state">
+    <div class="es-emoji">@Emoji</div>
+    <h3>@Title</h3>
+    <p>@Message</p>
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public string Emoji { get; set; } = "🔍";
+    [Parameter] public string Title { get; set; } = "Nothing to show";
+    [Parameter] public string Message { get; set; } = "";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

@@ -1,0 +1,28 @@
+@implements IDialogContentComponent<string>
+
+<div class="dlg-content">
+    <p class="dlg-sub">Keyboard shortcuts available throughout the Command Center.</p>
+    <div class="sc-grid">
+        <div>Open command palette / search pages</div>
+        <div class="sc-keys"><kbd>Ctrl</kbd><kbd>K</kbd></div>
+
+        <div>Show this shortcuts reference</div>
+        <div class="sc-keys"><kbd>?</kbd></div>
+
+        <div>Close palette / dialog</div>
+        <div class="sc-keys"><kbd>Esc</kbd></div>
+
+        <div>Navigate palette results</div>
+        <div class="sc-keys"><kbd>↑</kbd><kbd>↓</kbd></div>
+
+        <div>Open highlighted result</div>
+        <div class="sc-keys"><kbd>Enter</kbd></div>
+
+        <div>Print / save current report as PDF</div>
+        <div class="sc-keys"><kbd>Ctrl</kbd><kbd>P</kbd></div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Content { get; set; } = "";
+}

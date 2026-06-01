@@ -1,0 +1,30 @@
+@*
+   Loading skeleton placeholders. Variant chooses the shape:
+   "page" (kpi grid + chart), "kpis", "chart", "table".
+*@
+@switch (Variant)
+{
+    case "kpis":
+        <div class="sk-kpi-grid">
+            @for (int i = 0; i < Count; i++) { <div class="sk sk-kpi"></div> }
+        </div>
+        break;
+    case "chart":
+        <div class="sk sk-chart"></div>
+        break;
+    case "table":
+        @for (int i = 0; i < Count; i++) { <div class="sk sk-row"></div> }
+        break;
+    default: // "page"
+        <div class="sk-kpi-grid">
+            @for (int i = 0; i < Count; i++) { <div class="sk sk-kpi"></div> }
+        </div>
+        <div class="sk sk-chart"></div>
+        @for (int i = 0; i < 4; i++) { <div class="sk sk-row"></div> }
+        break;
+}
+
+@code {
+    [Parameter] public string Variant { get; set; } = "page";
+    [Parameter] public int Count { get; set; } = 4;
+}

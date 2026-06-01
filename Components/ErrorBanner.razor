@@ -1,0 +1,12 @@
+<div class="error-banner" role="alert">
+    <span class="eb-icon">⚠️</span>
+    <div>
+        <div class="eb-title">@Title</div>
+        <div class="eb-msg">@Message</div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "Couldn't load data";
+    [Parameter] public string Message { get; set; } = "An unexpected error occurred. Try resetting the demo data from the header.";
+}

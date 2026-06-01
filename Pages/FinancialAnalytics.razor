@@ -1,17 +1,40 @@
 @page "/financial-analytics"
 @inject AppData AppData
+@inject UiState Ui
+@inject IJSRuntime JS
 <PageTitle>Financial Analytics · D365 ERP Command Center</PageTitle>
+
+<div class="print-only print-header">
+    <div class="ph-co">Alamo Foods Co.</div>
+    <div class="ph-report">Financial Statements — Trial Balance · P&amp;L · Balance Sheet</div>
+    <div class="ph-meta">
+        Fiscal period @Fiscal.PeriodLabel(AppData.Data.AsOf) · Currency @AppInfo.BaseCurrency ·
+        Environment @Ui.EnvName · Generated @DateTime.Now.ToString("MMM d, yyyy h:mm tt")
+    </div>
+</div>
 
 <div class="page-header">
     <div>
         <h1>Financial Analytics</h1>
         <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">Data Analyst</FluentBadge>
     </div>
+    <div style="display:flex;gap:.5rem;align-items:center">
+        <div class="scale-toggle" role="group" aria-label="Display units">
+            <button class="@(_scale == MoneyScale.Units ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Units)">$</button>
+            <button class="@(_scale == MoneyScale.Thousands ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Thousands)">$K</button>
+            <button class="@(_scale == MoneyScale.Millions ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Millions)">$M</button>
+        </div>
+        <FluentButton Appearance="Appearance.Stealth" OnClick="Print">🖨 Print / PDF</FluentButton>
+    </div>
 </div>
 
 <PageMeta AsOf="@AppData.Data.AsOf" GeneratedAtUtc="@AppData.Data.GeneratedAtUtc" Module="Financial reporting" />
 
-@if (!_ready)
+@if (_error)
+{
+    <ErrorBanner Message="Couldn't load the financial statements. Use the account menu in the header to reset the demo data." />
+}
+else if (!_ready)
 {
     <Skeleton Variant="page" />
 }
@@ -19,9 +42,9 @@ else
 {
     @* ---- INCOME STATEMENT KPIs ---- *@
     <div class="kpi-grid">
-        <KpiCard Label="Revenue" Value="@Fmt.Money(_revenue)" Sub="Account 4000" />
+        <KpiCard Label="Revenue" Value="@Fmt.Money(_revenue, _scale)" Sub="Account 4000" />
         <KpiCard Label="Gross Margin %" Value="@Fmt.Pct(_grossMarginPct)" Sub="Gross profit ÷ revenue" />
-        <KpiCard Label="Operating Income" Value="@Fmt.Money(_operatingIncome)" Sub="Gross profit − OpEx" Positive="@(_operatingIncome >= 0)" />
+        <KpiCard Label="Operating Income" Value="@Fmt.Money(_operatingIncome, _scale)" Sub="Gross profit − OpEx" Positive="@(_operatingIncome >= 0)" />
     </div>
 
     @* ---- TRIAL BALANCE ---- *@
@@ -44,16 +67,16 @@ else
                     <td>@a.Number</td>
                     <td>@a.Name</td>
                     <td>@a.Type</td>
-                    <td class="num">@(isDebit ? Fmt.Num(a.Balance) : "")</td>
-                    <td class="num">@(isDebit ? "" : Fmt.Num(a.Balance))</td>
+                    <td class="num">@(isDebit ? Fmt.Money(a.Balance, _scale) : "")</td>
+                    <td class="num">@(isDebit ? "" : Fmt.Money(a.Balance, _scale))</td>
                 </tr>
             }
             <tr class="total">
                 <td>Total</td>
                 <td></td>
                 <td></td>
-                <td class="num">@Fmt.Num(_debitTotal)</td>
-                <td class="num">@Fmt.Num(_creditTotal)</td>
+                <td class="num">@Fmt.Money(_debitTotal, _scale)</td>
+                <td class="num">@Fmt.Money(_creditTotal, _scale)</td>
             </tr>
         </tbody>
     </table>
@@ -70,23 +93,23 @@ else
         <tbody>
             <tr>
                 <td>Revenue</td>
-                <td class="num">@Fmt.Money(_revenue)</td>
+                <td class="num">@Fmt.Money(_revenue, _scale)</td>
             </tr>
             <tr>
                 <td>Cost of Goods Sold</td>
-                <td class="num">@Fmt.Money(_cogs)</td>
+                <td class="num">@Fmt.Money(_cogs, _scale)</td>
             </tr>
             <tr class="total">
                 <td>Gross Profit</td>
-                <td class="num">@Fmt.Money(_grossProfit)</td>
+                <td class="num">@Fmt.Money(_grossProfit, _scale)</td>
             </tr>
             <tr>
                 <td>Operating Expenses</td>
-                <td class="num">@Fmt.Money(_opex)</td>
+                <td class="num">@Fmt.Money(_opex, _scale)</td>
             </tr>
             <tr class="total">
                 <td>Operating Income</td>
-                <td class="num">@Fmt.Money(_operatingIncome)</td>
+                <td class="num">@Fmt.Money(_operatingIncome, _scale)</td>
             </tr>
         </tbody>
     </table>
@@ -110,13 +133,13 @@ else
                 <tr>
                     <td>@n</td>
                     <td>@NameOf(n)</td>
-                    <td class="num">@Fmt.Money(Bal(n))</td>
+                    <td class="num">@Fmt.Money(Bal(n), _scale)</td>
                 </tr>
             }
             <tr class="total">
                 <td>Total Assets</td>
                 <td></td>
-                <td class="num">@Fmt.Money(_assetsTotal)</td>
+                <td class="num">@Fmt.Money(_assetsTotal, _scale)</td>
             </tr>
 
             @foreach (var n in _liabilityNums)
@@ -124,13 +147,13 @@ else
                 <tr>
                     <td>@n</td>
                     <td>@NameOf(n)</td>
-                    <td class="num">@Fmt.Money(Bal(n))</td>
+                    <td class="num">@Fmt.Money(Bal(n), _scale)</td>
                 </tr>
             }
             <tr class="total">
                 <td>Total Liabilities</td>
                 <td></td>
-                <td class="num">@Fmt.Money(_liabilitiesTotal)</td>
+                <td class="num">@Fmt.Money(_liabilitiesTotal, _scale)</td>
             </tr>
 
             @foreach (var n in _equityNums)
@@ -138,19 +161,19 @@ else
                 <tr>
                     <td>@n</td>
                     <td>@NameOf(n)</td>
-                    <td class="num">@Fmt.Money(Bal(n))</td>
+                    <td class="num">@Fmt.Money(Bal(n), _scale)</td>
                 </tr>
             }
             <tr class="total">
                 <td>Total Equity</td>
                 <td></td>
-                <td class="num">@Fmt.Money(_equityTotal)</td>
+                <td class="num">@Fmt.Money(_equityTotal, _scale)</td>
             </tr>
 
             <tr class="total">
                 <td>Liabilities + Equity</td>
                 <td></td>
-                <td class="num">@Fmt.Money(_liabilitiesTotal + _equityTotal)</td>
+                <td class="num">@Fmt.Money(_liabilitiesTotal + _equityTotal, _scale)</td>
             </tr>
         </tbody>
     </table>
@@ -158,6 +181,8 @@ else
 
 @code {
     private bool _ready;
+    private bool _error;
+    private MoneyScale _scale = MoneyScale.Units;
     private List<GlAccount> _accounts = new();
 
     private readonly string[] _assetNums = { "1000", "1100", "1200", "1500" };
@@ -185,8 +210,12 @@ else
     private string NameOf(string num)
         => _accounts.FirstOrDefault(a => a.Number == num)?.Name ?? num;
 
+    private async Task Print() => await JS.InvokeVoidAsync("afcPrint", "");
+
     protected override async Task OnInitializedAsync()
     {
+      try
+      {
         await AppData.InitializeAsync();
         _accounts = AppData.Data.GlAccounts.ToList();
 
@@ -210,5 +239,10 @@ else
         _balanced = Math.Abs(_assetsTotal - (_liabilitiesTotal + _equityTotal)) <= 1m;
 
         _ready = true;
+      }
+      catch
+      {
+        _error = true;
+      }
     }
 }

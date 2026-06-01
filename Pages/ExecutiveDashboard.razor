@@ -1,35 +1,58 @@
 @page "/executive-dashboard"
 @inject AppData AppData
+@inject UiState Ui
+@inject IJSRuntime JS
 @inject IDialogService DialogService
 <PageTitle>Executive Dashboard · D365 ERP Command Center</PageTitle>
+
+<div class="print-only print-header">
+    <div class="ph-co">Alamo Foods Co.</div>
+    <div class="ph-report">Executive Dashboard — Cross-Module Scorecard</div>
+    <div class="ph-meta">
+        Fiscal period @Fiscal.PeriodLabel(AppData.Data.AsOf) · Currency @AppInfo.BaseCurrency ·
+        Environment @Ui.EnvName · Generated @DateTime.Now.ToString("MMM d, yyyy h:mm tt")
+    </div>
+</div>
 
 <div class="page-header">
     <div>
         <h1>Executive Dashboard</h1>
         <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">Data Analyst</FluentBadge>
     </div>
+    <div style="display:flex;gap:.5rem;align-items:center">
+        <div class="scale-toggle" role="group" aria-label="Display units">
+            <button class="@(_scale == MoneyScale.Units ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Units)">$</button>
+            <button class="@(_scale == MoneyScale.Thousands ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Thousands)">$K</button>
+            <button class="@(_scale == MoneyScale.Millions ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Millions)">$M</button>
+        </div>
+        <FluentButton Appearance="Appearance.Stealth" OnClick="Print">🖨 Print / PDF</FluentButton>
+    </div>
 </div>
 
 <PageMeta AsOf="@AppData.Data.AsOf" GeneratedAtUtc="@AppData.Data.GeneratedAtUtc" Module="Executive reporting" />
 
-@if (!_ready)
+@if (_error)
+{
+    <ErrorBanner Message="Couldn't load the executive dashboard. Use the account menu in the header to reset the demo data." />
+}
+else if (!_ready)
 {
     <Skeleton Variant="page" />
 }
 else
 {
     <div class="kpi-grid">
-        <KpiCard Label="Revenue" Value="@Fmt.Money(_revenue)" Sub="Account 4000 (YTD)"
+        <KpiCard Label="Revenue" Value="@Fmt.Money(_revenue, _scale)" Sub="Account 4000 (YTD)"
                  Clickable="true" OnClick="ShowIncome" />
         <KpiCard Label="Gross Margin %" Value="@Fmt.Pct(_grossMarginPct)" Sub="Gross profit ÷ revenue"
                  Clickable="true" OnClick="ShowIncome" />
-        <KpiCard Label="Open Receivable" Value="@Fmt.Money(_openAr)" Sub="Unpaid customer invoices"
+        <KpiCard Label="Open Receivable" Value="@Fmt.Money(_openAr, _scale)" Sub="Unpaid customer invoices"
                  Clickable="true" OnClick="ShowAr" />
-        <KpiCard Label="Open Payable" Value="@Fmt.Money(_openAp)" Sub="Unpaid vendor invoices" Positive="false"
+        <KpiCard Label="Open Payable" Value="@Fmt.Money(_openAp, _scale)" Sub="Unpaid vendor invoices" Positive="false"
                  Clickable="true" OnClick="ShowAp" />
-        <KpiCard Label="Inventory Value" Value="@Fmt.Money(_inventoryValue)" Sub="On-hand at cost"
+        <KpiCard Label="Inventory Value" Value="@Fmt.Money(_inventoryValue, _scale)" Sub="On-hand at cost"
                  Clickable="true" OnClick="ShowInventory" />
-        <KpiCard Label="Open Sales Orders" Value="@Fmt.Num(_openSoCount)" Sub="@($"Worth {Fmt.Money(_openSoValue)}")"
+        <KpiCard Label="Open Sales Orders" Value="@Fmt.Num(_openSoCount)" Sub="@($"Worth {Fmt.Money(_openSoValue, _scale)}")"
                  Clickable="true" OnClick="ShowSalesOrders" />
     </div>
 
@@ -43,6 +66,8 @@ else
 
 @code {
     private bool _ready;
+    private bool _error;
+    private MoneyScale _scale = MoneyScale.Units;
 
     private decimal _revenue, _cogs, _grossProfit, _opex, _operatingIncome, _grossMarginPct;
     private decimal _openAr, _openAp, _inventoryValue, _openSoValue;
@@ -63,6 +88,8 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+      try
+      {
         await AppData.InitializeAsync();
         var d = AppData.Data;
 
@@ -110,15 +137,22 @@ else
         _soSeries = new List<ChartSeries> { new ChartSeries("Orders", soByStatus.Select(g => (double)g.Count()).ToArray()) };
 
         _ready = true;
+      }
+      catch
+      {
+        _error = true;
+      }
     }
 
-    // ---------------- Drill-down dialogs ----------------
+    private async Task Print() => await JS.InvokeVoidAsync("afcPrint", "");
+
+    // ---------------- Drill-down dialogs (with breadcrumb in title) ----------------
 
     private async Task Show(ExecDrilldownDialog.Args args)
     {
         var parameters = new DialogParameters
         {
-            Title = args.Title,
+            Title = "Executive Dashboard ▸ " + args.Title,
             Width = "720px",
             PrimaryAction = "Close",
             SecondaryAction = null

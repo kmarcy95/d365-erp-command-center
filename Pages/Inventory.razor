@@ -1,31 +1,53 @@
 @page "/inventory"
 @inject AppData AppData
+@inject UiState Ui
 @inject IJSRuntime JS
 @inject IDialogService DialogService
 <PageTitle>Inventory · D365 ERP Command Center</PageTitle>
+
+<div class="print-only print-header">
+    <div class="ph-co">Alamo Foods Co.</div>
+    <div class="ph-report">Inventory — On-Hand &amp; Valuation</div>
+    <div class="ph-meta">
+        Fiscal period @Fiscal.PeriodLabel(AppData.Data.AsOf) · Currency @AppInfo.BaseCurrency ·
+        Environment @Ui.EnvName · Generated @DateTime.Now.ToString("MMM d, yyyy h:mm tt")
+    </div>
+</div>
 
 <div class="page-header">
     <div>
         <h1>Inventory</h1>
         <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">D365 ERP Analyst</FluentBadge>
     </div>
-    <FluentButton Appearance="Appearance.Accent" OnClick="Export">Export CSV</FluentButton>
+    <div style="display:flex;gap:.5rem;align-items:center">
+        <div class="scale-toggle" role="group" aria-label="Display units">
+            <button class="@(_scale == MoneyScale.Units ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Units)">$</button>
+            <button class="@(_scale == MoneyScale.Thousands ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Thousands)">$K</button>
+            <button class="@(_scale == MoneyScale.Millions ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Millions)">$M</button>
+        </div>
+        <FluentButton Appearance="Appearance.Stealth" OnClick="Print">🖨 Print / PDF</FluentButton>
+        <FluentButton Appearance="Appearance.Accent" OnClick="Export">⬇ Export CSV</FluentButton>
+    </div>
 </div>
 
 <PageMeta AsOf="@AppData.Data.AsOf" GeneratedAtUtc="@AppData.Data.GeneratedAtUtc" Module="Inventory management" />
 
-@if (!_ready)
+@if (_error)
+{
+    <ErrorBanner Message="Couldn't load inventory data. Use the account menu in the header to reset the demo data." />
+}
+else if (!_ready)
 {
     <Skeleton Variant="page" />
 }
 else
 {
     <div class="kpi-grid">
-        <KpiCard Label="Inventory Value" Value="@Fmt.Money(_totalValue)" Sub="On-hand × unit cost"
+        <KpiCard Label="Inventory Value" Value="@Fmt.Money(_totalValue, _scale)" Sub="On-hand × unit cost"
                  Clickable="true" OnClick="ShowValueByCategory" />
         <KpiCard Label="SKUs" Value="@Fmt.Num(_all.Count)" Sub="Distinct items"
                  Clickable="true" OnClick="ShowSkuMix" />
-        <KpiCard Label="Below Reorder" Value="@Fmt.Num(_belowReorder)" Sub="Need replenishment" Positive="false"
+        <KpiCard Label="Below Reorder" Value="@Fmt.Num(_belowReorder)" Sub="Need replenishment" Positive="@(_belowReorder == 0)"
                  Clickable="true" OnClick="ShowBelowReorder" />
         <KpiCard Label="Warehouses" Value="@Fmt.Num(_warehouseCount)" Sub="Stocking locations"
                  Clickable="true" OnClick="ShowByWarehouse" />
@@ -35,72 +57,151 @@ else
         <Chart Title="Inventory value by category" Type="doughnut" Labels="@_categoryLabels" Series="@_categorySeries" />
     </div>
 
-    <FluentSearch @bind-Value="_search" @bind-Value:after="Apply" Placeholder="Search name or SKU…" Class="afc-search" />
-
-    <p class="grid-hint">Click any row for the item’s stock position and unit economics.</p>
-    <div class="grid-wrap">
-        <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="InventoryItem"
-                        OnRowClick="@(async (FluentDataGridRow<InventoryItem> row) => await OpenItem(row.Item))"
-                        RowClass="@(_ => "grid-row-clickable")">
-            <PropertyColumn Property="@(i => i.Sku)" Title="Sku" Sortable="true" />
-            <PropertyColumn Property="@(i => i.Name)" Title="Name" Sortable="true" />
-            <PropertyColumn Property="@(i => i.Category)" Title="Category" Sortable="true" />
-            <PropertyColumn Property="@(i => i.WarehouseCode)" Title="Warehouse" Sortable="true" />
-            <PropertyColumn Property="@(i => i.OnHand)" Format="N0" Title="OnHand" Sortable="true" Align="Align.End" />
-            <PropertyColumn Property="@(i => i.ReorderPoint)" Format="N0" Title="ReorderPoint" Sortable="true" Align="Align.End" />
-            <PropertyColumn Property="@(i => i.UnitCost)" Format="N0" Title="Unit Cost ($)" Sortable="true" Align="Align.End" />
-            <PropertyColumn Property="@(i => i.Value)" Format="N0" Title="Value ($)" Sortable="true" Align="Align.End" />
-            <TemplateColumn Title="Stock" Sortable="false">
-                <StatusBadge Text="@(context.BelowReorder ? "Below reorder" : "OK")" Kind="@(context.BelowReorder ? "bad" : "good")" />
-            </TemplateColumn>
-        </FluentDataGrid>
+    <div class="filter-bar">
+        <div class="filter-field">
+            <label>Category</label>
+            <select value="@_category" @onchange="@(e => { _category = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All categories</option>
+                @foreach (var c in _categories) { <option value="@c">@c</option> }
+            </select>
+        </div>
+        <div class="filter-field">
+            <label>Warehouse</label>
+            <select value="@_warehouse" @onchange="@(e => { _warehouse = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All warehouses</option>
+                @foreach (var w in _warehouses) { <option value="@w">@w</option> }
+            </select>
+        </div>
+        <div class="filter-field">
+            <label>Stock status</label>
+            <select value="@_stock" @onchange="@(e => { _stock = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All</option>
+                <option value="below">Below reorder only</option>
+                <option value="ok">In stock only</option>
+            </select>
+        </div>
+        <div class="filter-field" style="flex:1 1 180px">
+            <label>Search</label>
+            <input value="@_search" @oninput="@(e => { _search = e.Value?.ToString() ?? ""; Apply(); })" placeholder="Name or SKU…" />
+        </div>
+        <button class="fb-reset" @onclick="ResetFilters">Reset filters</button>
     </div>
 
-    <FluentPaginator State="@_pagination" />
+    <div class="thr-legend">
+        <span class="tl"><span class="sw sw-bad"></span> On-hand below reorder point (replenish)</span>
+    </div>
+
+    <p class="grid-hint">@_filteredCount of @_all.Count SKUs shown · click any row for the item’s stock position and unit economics.</p>
+
+    @if (_filteredCount == 0)
+    {
+        <div class="grid-wrap">
+            <EmptyState Emoji="🏷️" Title="No matching items"
+                        Message="No inventory items match the current filters. Try clearing a filter or resetting." />
+        </div>
+    }
+    else
+    {
+        <div class="grid-wrap">
+            <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="InventoryItem"
+                            OnRowClick="@(async (FluentDataGridRow<InventoryItem> row) => await OpenItem(row.Item))"
+                            RowClass="@RowClass">
+                <PropertyColumn Property="@(i => i.Sku)" Title="Sku" Sortable="true" />
+                <PropertyColumn Property="@(i => i.Name)" Title="Name" Sortable="true" />
+                <PropertyColumn Property="@(i => i.Category)" Title="Category" Sortable="true" />
+                <PropertyColumn Property="@(i => i.WarehouseCode)" Title="Warehouse" Sortable="true" />
+                <PropertyColumn Property="@(i => i.OnHand)" Format="N0" Title="OnHand" Sortable="true" Align="Align.End" />
+                <PropertyColumn Property="@(i => i.ReorderPoint)" Format="N0" Title="ReorderPoint" Sortable="true" Align="Align.End" />
+                <TemplateColumn Title="Unit Cost ($)" Align="Align.End"
+                                SortBy="@(GridSort<InventoryItem>.ByAscending(i => i.UnitCost))">
+                    @Fmt.Money(context.UnitCost, _scale)
+                </TemplateColumn>
+                <TemplateColumn Title="Value ($)" Align="Align.End"
+                                SortBy="@(GridSort<InventoryItem>.ByAscending(i => i.Value))">
+                    @Fmt.Money(context.Value, _scale)
+                </TemplateColumn>
+                <TemplateColumn Title="Stock" Sortable="false">
+                    <StatusBadge Text="@(context.BelowReorder ? "Below reorder" : "OK")" Kind="@(context.BelowReorder ? "bad" : "good")" />
+                </TemplateColumn>
+            </FluentDataGrid>
+        </div>
+
+        <FluentPaginator State="@_pagination" />
+    }
 }
 
 @code {
     private bool _ready;
+    private bool _error;
+    private MoneyScale _scale = MoneyScale.Units;
     private string _search = "";
+    private string _category = "";
+    private string _warehouse = "";
+    private string _stock = "";
 
     private List<InventoryItem> _all = new();
     private IQueryable<InventoryItem> _filtered = Enumerable.Empty<InventoryItem>().AsQueryable();
+    private int _filteredCount;
     private readonly PaginationState _pagination = new() { ItemsPerPage = 15 };
 
     private decimal _totalValue;
     private int _belowReorder;
     private int _warehouseCount;
+    private string[] _categories = Array.Empty<string>();
+    private string[] _warehouses = Array.Empty<string>();
 
     private string[] _categoryLabels = Array.Empty<string>();
     private List<ChartSeries> _categorySeries = new();
 
     protected override async Task OnInitializedAsync()
     {
-        await AppData.InitializeAsync();
-        _all = AppData.Data.Inventory.ToList();
-
-        _totalValue = _all.Sum(i => i.Value);
-        _belowReorder = _all.Count(i => i.BelowReorder);
-        _warehouseCount = AppData.Data.Warehouses.Count;
-
-        var byCategory = _all
-            .GroupBy(i => i.Category)
-            .Select(g => new { Category = g.Key, Value = g.Sum(i => i.Value) })
-            .OrderByDescending(g => g.Value)
-            .ToList();
-        _categoryLabels = byCategory.Select(g => g.Category).ToArray();
-        _categorySeries = new List<ChartSeries>
+        try
         {
-            new ChartSeries("Value", byCategory.Select(g => (double)g.Value).ToArray())
-        };
+            await AppData.InitializeAsync();
+            _all = AppData.Data.Inventory.ToList();
 
+            _totalValue = _all.Sum(i => i.Value);
+            _belowReorder = _all.Count(i => i.BelowReorder);
+            _warehouseCount = AppData.Data.Warehouses.Count;
+            _categories = _all.Select(i => i.Category).Distinct().OrderBy(x => x).ToArray();
+            _warehouses = _all.Select(i => i.WarehouseCode).Distinct().OrderBy(x => x).ToArray();
+
+            var byCategory = _all
+                .GroupBy(i => i.Category)
+                .Select(g => new { Category = g.Key, Value = g.Sum(i => i.Value) })
+                .OrderByDescending(g => g.Value)
+                .ToList();
+            _categoryLabels = byCategory.Select(g => g.Category).ToArray();
+            _categorySeries = new List<ChartSeries>
+            {
+                new ChartSeries("Value", byCategory.Select(g => (double)g.Value).ToArray())
+            };
+
+            Apply();
+            _ready = true;
+        }
+        catch
+        {
+            _error = true;
+        }
+    }
+
+    private string RowClass(InventoryItem i)
+        => i.BelowReorder ? "grid-row-clickable var-row-bad" : "grid-row-clickable";
+
+    private void ResetFilters()
+    {
+        _search = _category = _warehouse = _stock = "";
         Apply();
-        _ready = true;
     }
 
     private void Apply()
     {
         var q = _all.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(_category)) q = q.Where(i => i.Category == _category);
+        if (!string.IsNullOrWhiteSpace(_warehouse)) q = q.Where(i => i.WarehouseCode == _warehouse);
+        if (_stock == "below") q = q.Where(i => i.BelowReorder);
+        else if (_stock == "ok") q = q.Where(i => !i.BelowReorder);
         if (!string.IsNullOrWhiteSpace(_search))
         {
             var s = _search.Trim();
@@ -108,16 +209,20 @@ else
                 i.Name.Contains(s, StringComparison.OrdinalIgnoreCase) ||
                 i.Sku.Contains(s, StringComparison.OrdinalIgnoreCase));
         }
-        _filtered = q.AsQueryable();
+        var list = q.ToList();
+        _filteredCount = list.Count;
+        _filtered = list.AsQueryable();
     }
 
-    // ---------------- Drill-down dialogs ----------------
+    private async Task Print() => await JS.InvokeVoidAsync("afcPrint", "");
+
+    // ---------------- Drill-down dialogs (with breadcrumb in title) ----------------
 
     private async Task ShowDrilldown(InventoryDrilldownDialog.Args args)
     {
         var parameters = new DialogParameters
         {
-            Title = args.Title,
+            Title = "Inventory ▸ " + args.Title,
             Width = "780px",
             PrimaryAction = "Close",
             SecondaryAction = null
@@ -203,7 +308,7 @@ else
         if (item is null) return;
         var parameters = new DialogParameters
         {
-            Title = $"{item.Sku} · {item.Name}",
+            Title = $"Inventory ▸ {item.Sku} · {item.Name}",
             Width = "560px",
             PrimaryAction = "Close",
             SecondaryAction = null

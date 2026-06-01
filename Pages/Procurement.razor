@@ -1,73 +1,149 @@
 @page "/procurement"
 @inject AppData AppData
+@inject UiState Ui
 @inject IJSRuntime JS
 @inject IDialogService DialogService
 <PageTitle>Procurement · D365 ERP Command Center</PageTitle>
+
+<div class="print-only print-header">
+    <div class="ph-co">Alamo Foods Co.</div>
+    <div class="ph-report">Procurement — Purchase Orders</div>
+    <div class="ph-meta">
+        Fiscal period @Fiscal.PeriodLabel(AppData.Data.AsOf) · Currency @AppInfo.BaseCurrency ·
+        Environment @Ui.EnvName · Generated @DateTime.Now.ToString("MMM d, yyyy h:mm tt")
+    </div>
+</div>
 
 <div class="page-header">
     <div>
         <h1>Procurement</h1>
         <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">D365 ERP Analyst</FluentBadge>
     </div>
-    <FluentButton Appearance="Appearance.Accent" OnClick="Export">Export CSV</FluentButton>
+    <div style="display:flex;gap:.5rem;align-items:center">
+        <div class="scale-toggle" role="group" aria-label="Display units">
+            <button class="@(_scale == MoneyScale.Units ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Units)">$</button>
+            <button class="@(_scale == MoneyScale.Thousands ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Thousands)">$K</button>
+            <button class="@(_scale == MoneyScale.Millions ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Millions)">$M</button>
+        </div>
+        <FluentButton Appearance="Appearance.Stealth" OnClick="Print">🖨 Print / PDF</FluentButton>
+        <FluentButton Appearance="Appearance.Accent" OnClick="Export">⬇ Export CSV</FluentButton>
+    </div>
 </div>
 
 <PageMeta AsOf="@AppData.Data.AsOf" GeneratedAtUtc="@AppData.Data.GeneratedAtUtc" Module="Procurement &amp; sourcing" />
 
-@if (!_ready)
+@if (_error)
+{
+    <ErrorBanner Message="Couldn't load procurement data. Use the account menu in the header to reset the demo data." />
+}
+else if (!_ready)
 {
     <Skeleton Variant="page" />
 }
 else
 {
     <div class="kpi-grid">
-        <KpiCard Label="Open PO Value" Value="@Fmt.Money(_openValue)" Sub="POs not yet received"
+        <KpiCard Label="Open PO Value" Value="@Fmt.Money(_openValue, _scale)" Sub="POs not yet received"
                  Clickable="true" OnClick="ShowOpenValue" />
         <KpiCard Label="Purchase Orders" Value="@Fmt.Num(_all.Count)" Sub="Total POs"
                  Clickable="true" OnClick="ShowAllOrders" />
-        <KpiCard Label="Pending Approval" Value="@Fmt.Num(_pendingApproval)" Sub="Not yet approved" Positive="false"
+        <KpiCard Label="Pending Approval" Value="@Fmt.Num(_pendingApproval)" Sub="Not yet approved" Positive="@(_pendingApproval == 0)"
                  Clickable="true" OnClick="ShowPendingApproval" />
         <KpiCard Label="Vendors" Value="@Fmt.Num(_vendorCount)" Sub="Distinct vendors"
                  Clickable="true" OnClick="ShowVendors" />
     </div>
 
-    <FluentSearch @bind-Value="_search" @bind-Value:after="Apply" Placeholder="Search vendor name or number…" Class="afc-search" />
-
-    <p class="grid-hint">Click any row for the purchase order’s detail.</p>
-    <div class="grid-wrap">
-        <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="PurchaseOrder"
-                        OnRowClick="@(async (FluentDataGridRow<PurchaseOrder> row) => await OpenOrder(row.Item))"
-                        RowClass="@(_ => "grid-row-clickable")">
-            <PropertyColumn Property="@(p => p.Number)" Title="Number" Sortable="true" />
-            <PropertyColumn Property="@(p => p.VendorName)" Title="Vendor" Sortable="true" />
-            <PropertyColumn Property="@(p => p.OrderDate)" Title="Order Date" Sortable="true"
-                            IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Descending" />
-            <PropertyColumn Property="@(p => p.ExpectedDate)" Title="Expected" Sortable="true" />
-            <PropertyColumn Property="@(p => p.Total)" Format="N0" Title="Total ($)" Sortable="true" Align="Align.End" />
-            <TemplateColumn Title="Status" Sortable="false">
-                <StatusBadge Text="@context.Status.ToString()" Kind="@StatusKind(context.Status)" />
-            </TemplateColumn>
-            <TemplateColumn Title="Approval" Sortable="false">
-                <StatusBadge Text="@context.ApprovalStatus" Kind="@(context.ApprovalStatus == "Approved" ? "good" : "warn")" />
-            </TemplateColumn>
-            <PropertyColumn Property="@(p => p.Buyer)" Title="Buyer" Sortable="true" />
-        </FluentDataGrid>
+    <div class="filter-bar">
+        <div class="filter-field">
+            <label>Status</label>
+            <select value="@_status" @onchange="@(e => { _status = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All statuses</option>
+                @foreach (var s in Enum.GetNames<PoStatus>()) { <option value="@s">@s</option> }
+            </select>
+        </div>
+        <div class="filter-field">
+            <label>Approval</label>
+            <select value="@_approval" @onchange="@(e => { _approval = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All</option>
+                @foreach (var a in _approvals) { <option value="@a">@a</option> }
+            </select>
+        </div>
+        <div class="filter-field">
+            <label>Buyer</label>
+            <select value="@_buyer" @onchange="@(e => { _buyer = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All buyers</option>
+                @foreach (var b in _buyers) { <option value="@b">@b</option> }
+            </select>
+        </div>
+        <div class="filter-field" style="flex:1 1 180px">
+            <label>Search</label>
+            <input value="@_search" @oninput="@(e => { _search = e.Value?.ToString() ?? ""; Apply(); })" placeholder="Vendor name or number…" />
+        </div>
+        <button class="fb-reset" @onclick="ResetFilters">Reset filters</button>
     </div>
 
-    <FluentPaginator State="@_pagination" />
+    <div class="thr-legend">
+        <span class="tl"><span class="sw sw-bad"></span> Past expected date &amp; not received</span>
+        <span class="tl"><span class="sw sw-warn"></span> Awaiting approval</span>
+    </div>
+
+    <p class="grid-hint">@_filteredCount of @_all.Count POs shown · click any row for the purchase order’s detail.</p>
+
+    @if (_filteredCount == 0)
+    {
+        <div class="grid-wrap">
+            <EmptyState Emoji="📦" Title="No matching purchase orders"
+                        Message="No POs match the current filters. Try clearing a filter or resetting." />
+        </div>
+    }
+    else
+    {
+        <div class="grid-wrap">
+            <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="PurchaseOrder"
+                            OnRowClick="@(async (FluentDataGridRow<PurchaseOrder> row) => await OpenOrder(row.Item))"
+                            RowClass="@RowClass">
+                <PropertyColumn Property="@(p => p.Number)" Title="Number" Sortable="true" />
+                <PropertyColumn Property="@(p => p.VendorName)" Title="Vendor" Sortable="true" />
+                <PropertyColumn Property="@(p => p.OrderDate)" Title="Order Date" Sortable="true"
+                                IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Descending" />
+                <PropertyColumn Property="@(p => p.ExpectedDate)" Title="Expected" Sortable="true" />
+                <TemplateColumn Title="Total ($)" Align="Align.End"
+                                SortBy="@(GridSort<PurchaseOrder>.ByAscending(p => p.Total))">
+                    @Fmt.Money(context.Total, _scale)
+                </TemplateColumn>
+                <TemplateColumn Title="Status" Sortable="false">
+                    <StatusBadge Text="@context.Status.ToString()" Kind="@StatusKind(context.Status)" />
+                </TemplateColumn>
+                <TemplateColumn Title="Approval" Sortable="false">
+                    <StatusBadge Text="@context.ApprovalStatus" Kind="@(context.ApprovalStatus == "Approved" ? "good" : "warn")" />
+                </TemplateColumn>
+                <PropertyColumn Property="@(p => p.Buyer)" Title="Buyer" Sortable="true" />
+            </FluentDataGrid>
+        </div>
+
+        <FluentPaginator State="@_pagination" />
+    }
 }
 
 @code {
     private bool _ready;
+    private bool _error;
+    private MoneyScale _scale = MoneyScale.Units;
     private string _search = "";
+    private string _status = "";
+    private string _approval = "";
+    private string _buyer = "";
 
     private List<PurchaseOrder> _all = new();
     private IQueryable<PurchaseOrder> _filtered = Enumerable.Empty<PurchaseOrder>().AsQueryable();
+    private int _filteredCount;
     private readonly PaginationState _pagination = new() { ItemsPerPage = 15 };
 
     private decimal _openValue;
     private int _pendingApproval;
     private int _vendorCount;
+    private string[] _approvals = Array.Empty<string>();
+    private string[] _buyers = Array.Empty<string>();
 
     private static string StatusKind(PoStatus s) => s switch
     {
@@ -79,20 +155,45 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        await AppData.InitializeAsync();
-        _all = AppData.Data.PurchaseOrders.ToList();
+        try
+        {
+            await AppData.InitializeAsync();
+            _all = AppData.Data.PurchaseOrders.ToList();
 
-        _openValue = _all.Where(p => p.Status != PoStatus.Received).Sum(p => p.Total);
-        _pendingApproval = _all.Count(p => p.ApprovalStatus != "Approved");
-        _vendorCount = _all.Select(p => p.VendorNumber).Distinct().Count();
+            _openValue = _all.Where(p => p.Status != PoStatus.Received).Sum(p => p.Total);
+            _pendingApproval = _all.Count(p => p.ApprovalStatus != "Approved");
+            _vendorCount = _all.Select(p => p.VendorNumber).Distinct().Count();
+            _approvals = _all.Select(p => p.ApprovalStatus).Where(s => !string.IsNullOrEmpty(s)).Distinct().OrderBy(x => x).ToArray();
+            _buyers = _all.Select(p => p.Buyer).Where(s => !string.IsNullOrEmpty(s)).Distinct().OrderBy(x => x).ToArray();
 
+            Apply();
+            _ready = true;
+        }
+        catch
+        {
+            _error = true;
+        }
+    }
+
+    private string RowClass(PurchaseOrder p)
+    {
+        if (p.Status != PoStatus.Received && p.ExpectedDate < AppData.Data.AsOf) return "grid-row-clickable var-row-bad";
+        if (p.ApprovalStatus != "Approved") return "grid-row-clickable var-row-warn";
+        return "grid-row-clickable";
+    }
+
+    private void ResetFilters()
+    {
+        _search = _status = _approval = _buyer = "";
         Apply();
-        _ready = true;
     }
 
     private void Apply()
     {
         var q = _all.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(_status)) q = q.Where(p => p.Status.ToString() == _status);
+        if (!string.IsNullOrWhiteSpace(_approval)) q = q.Where(p => p.ApprovalStatus == _approval);
+        if (!string.IsNullOrWhiteSpace(_buyer)) q = q.Where(p => p.Buyer == _buyer);
         if (!string.IsNullOrWhiteSpace(_search))
         {
             var s = _search.Trim();
@@ -100,16 +201,20 @@ else
                 p.VendorName.Contains(s, StringComparison.OrdinalIgnoreCase) ||
                 p.VendorNumber.Contains(s, StringComparison.OrdinalIgnoreCase));
         }
-        _filtered = q.AsQueryable();
+        var list = q.ToList();
+        _filteredCount = list.Count;
+        _filtered = list.AsQueryable();
     }
 
-    // ---------------- Drill-down dialogs ----------------
+    private async Task Print() => await JS.InvokeVoidAsync("afcPrint", "");
+
+    // ---------------- Drill-down dialogs (with breadcrumb in title) ----------------
 
     private async Task ShowDrilldown(ProcurementDrilldownDialog.Args args)
     {
         var parameters = new DialogParameters
         {
-            Title = args.Title,
+            Title = "Procurement ▸ " + args.Title,
             Width = "820px",
             PrimaryAction = "Close",
             SecondaryAction = null
@@ -190,7 +295,7 @@ else
         if (order is null) return;
         var parameters = new DialogParameters
         {
-            Title = $"PO {order.Number}",
+            Title = $"Procurement ▸ PO {order.Number}",
             Width = "560px",
             PrimaryAction = "Close",
             SecondaryAction = null

@@ -1,27 +1,49 @@
 @page "/sales-orders"
 @inject AppData AppData
+@inject UiState Ui
 @inject IJSRuntime JS
 @inject IDialogService DialogService
 <PageTitle>Sales Orders · D365 ERP Command Center</PageTitle>
+
+<div class="print-only print-header">
+    <div class="ph-co">Alamo Foods Co.</div>
+    <div class="ph-report">Sales Orders — Order Book</div>
+    <div class="ph-meta">
+        Fiscal period @Fiscal.PeriodLabel(AppData.Data.AsOf) · Currency @AppInfo.BaseCurrency ·
+        Environment @Ui.EnvName · Generated @DateTime.Now.ToString("MMM d, yyyy h:mm tt")
+    </div>
+</div>
 
 <div class="page-header">
     <div>
         <h1>Sales Orders</h1>
         <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">D365 ERP Analyst</FluentBadge>
     </div>
-    <FluentButton Appearance="Appearance.Accent" OnClick="Export">Export CSV</FluentButton>
+    <div style="display:flex;gap:.5rem;align-items:center">
+        <div class="scale-toggle" role="group" aria-label="Display units">
+            <button class="@(_scale == MoneyScale.Units ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Units)">$</button>
+            <button class="@(_scale == MoneyScale.Thousands ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Thousands)">$K</button>
+            <button class="@(_scale == MoneyScale.Millions ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Millions)">$M</button>
+        </div>
+        <FluentButton Appearance="Appearance.Stealth" OnClick="Print">🖨 Print / PDF</FluentButton>
+        <FluentButton Appearance="Appearance.Accent" OnClick="Export">⬇ Export CSV</FluentButton>
+    </div>
 </div>
 
 <PageMeta AsOf="@AppData.Data.AsOf" GeneratedAtUtc="@AppData.Data.GeneratedAtUtc" Module="Sales &amp; marketing" />
 
-@if (!_ready)
+@if (_error)
+{
+    <ErrorBanner Message="Couldn't load sales orders. Use the account menu in the header to reset the demo data." />
+}
+else if (!_ready)
 {
     <Skeleton Variant="page" />
 }
 else
 {
     <div class="kpi-grid">
-        <KpiCard Label="Open Order Value" Value="@Fmt.Money(_openValue)" Sub="Orders not yet invoiced"
+        <KpiCard Label="Open Order Value" Value="@Fmt.Money(_openValue, _scale)" Sub="Orders not yet invoiced"
                  Clickable="true" OnClick="ShowOpenValue" />
         <KpiCard Label="Sales Orders" Value="@Fmt.Num(_all.Count)" Sub="Total orders"
                  Clickable="true" OnClick="ShowAllOrders" />
@@ -31,40 +53,84 @@ else
                  Clickable="true" OnClick="ShowCustomers" />
     </div>
 
-    <FluentSearch @bind-Value="_search" @bind-Value:after="Apply" Placeholder="Search customer name or number…" Class="afc-search" />
-
-    <p class="grid-hint">Click any row for the order’s line-item detail.</p>
-    <div class="grid-wrap">
-        <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="SalesOrder"
-                        OnRowClick="@(async (FluentDataGridRow<SalesOrder> row) => await OpenOrder(row.Item))"
-                        RowClass="@(_ => "grid-row-clickable")">
-            <PropertyColumn Property="@(o => o.Number)" Title="Number" Sortable="true" />
-            <PropertyColumn Property="@(o => o.CustomerName)" Title="Customer" Sortable="true" />
-            <PropertyColumn Property="@(o => o.Segment)" Title="Segment" Sortable="true" />
-            <PropertyColumn Property="@(o => o.OrderDate)" Title="Order Date" Sortable="true"
-                            IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Descending" />
-            <PropertyColumn Property="@(o => o.ShipDate)" Title="Ship Date" Sortable="true" />
-            <PropertyColumn Property="@(o => o.Total)" Format="N0" Title="Total ($)" Sortable="true" Align="Align.End" />
-            <TemplateColumn Title="Status" Sortable="false">
-                <StatusBadge Text="@context.Status.ToString()" Kind="@StatusKind(context.Status)" />
-            </TemplateColumn>
-        </FluentDataGrid>
+    <div class="filter-bar">
+        <div class="filter-field">
+            <label>Status</label>
+            <select value="@_status" @onchange="@(e => { _status = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All statuses</option>
+                @foreach (var s in Enum.GetNames<SoStatus>()) { <option value="@s">@s</option> }
+            </select>
+        </div>
+        <div class="filter-field">
+            <label>Segment</label>
+            <select value="@_segment" @onchange="@(e => { _segment = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All segments</option>
+                @foreach (var s in _segments) { <option value="@s">@s</option> }
+            </select>
+        </div>
+        <div class="filter-field" style="flex:1 1 200px">
+            <label>Search</label>
+            <input value="@_search" @oninput="@(e => { _search = e.Value?.ToString() ?? ""; Apply(); })" placeholder="Customer name or number…" />
+        </div>
+        <button class="fb-reset" @onclick="ResetFilters">Reset filters</button>
     </div>
 
-    <FluentPaginator State="@_pagination" />
+    <div class="thr-legend">
+        <span class="tl"><span class="sw sw-warn"></span> Past ship date &amp; not yet shipped (expedite)</span>
+    </div>
+
+    <p class="grid-hint">@_filteredCount of @_all.Count orders shown · click any row for the order’s line-item detail.</p>
+
+    @if (_filteredCount == 0)
+    {
+        <div class="grid-wrap">
+            <EmptyState Emoji="🧾" Title="No matching orders"
+                        Message="No sales orders match the current filters. Try clearing a filter or resetting." />
+        </div>
+    }
+    else
+    {
+        <div class="grid-wrap">
+            <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="SalesOrder"
+                            OnRowClick="@(async (FluentDataGridRow<SalesOrder> row) => await OpenOrder(row.Item))"
+                            RowClass="@RowClass">
+                <PropertyColumn Property="@(o => o.Number)" Title="Number" Sortable="true" />
+                <PropertyColumn Property="@(o => o.CustomerName)" Title="Customer" Sortable="true" />
+                <PropertyColumn Property="@(o => o.Segment)" Title="Segment" Sortable="true" />
+                <PropertyColumn Property="@(o => o.OrderDate)" Title="Order Date" Sortable="true"
+                                IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Descending" />
+                <PropertyColumn Property="@(o => o.ShipDate)" Title="Ship Date" Sortable="true" />
+                <TemplateColumn Title="Total ($)" Align="Align.End"
+                                SortBy="@(GridSort<SalesOrder>.ByAscending(o => o.Total))">
+                    @Fmt.Money(context.Total, _scale)
+                </TemplateColumn>
+                <TemplateColumn Title="Status" Sortable="false">
+                    <StatusBadge Text="@context.Status.ToString()" Kind="@StatusKind(context.Status)" />
+                </TemplateColumn>
+            </FluentDataGrid>
+        </div>
+
+        <FluentPaginator State="@_pagination" />
+    }
 }
 
 @code {
     private bool _ready;
+    private bool _error;
+    private MoneyScale _scale = MoneyScale.Units;
     private string _search = "";
+    private string _status = "";
+    private string _segment = "";
 
     private List<SalesOrder> _all = new();
     private IQueryable<SalesOrder> _filtered = Enumerable.Empty<SalesOrder>().AsQueryable();
+    private int _filteredCount;
     private readonly PaginationState _pagination = new() { ItemsPerPage = 15 };
 
     private decimal _openValue;
     private int _shipped;
     private int _customerCount;
+    private string[] _segments = Array.Empty<string>();
 
     private static string StatusKind(SoStatus s) => s switch
     {
@@ -76,20 +142,41 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        await AppData.InitializeAsync();
-        _all = AppData.Data.SalesOrders.ToList();
+        try
+        {
+            await AppData.InitializeAsync();
+            _all = AppData.Data.SalesOrders.ToList();
 
-        _openValue = _all.Where(o => o.Status != SoStatus.Invoiced).Sum(o => o.Total);
-        _shipped = _all.Count(o => o.Status == SoStatus.Shipped || o.Status == SoStatus.Invoiced);
-        _customerCount = _all.Select(o => o.CustomerNumber).Distinct().Count();
+            _openValue = _all.Where(o => o.Status != SoStatus.Invoiced).Sum(o => o.Total);
+            _shipped = _all.Count(o => o.Status == SoStatus.Shipped || o.Status == SoStatus.Invoiced);
+            _customerCount = _all.Select(o => o.CustomerNumber).Distinct().Count();
+            _segments = _all.Select(o => o.Segment).Where(s => !string.IsNullOrEmpty(s)).Distinct().OrderBy(x => x).ToArray();
 
+            Apply();
+            _ready = true;
+        }
+        catch
+        {
+            _error = true;
+        }
+    }
+
+    private string RowClass(SalesOrder o)
+        => (o.Status == SoStatus.Open || o.Status == SoStatus.Picked) && o.ShipDate < AppData.Data.AsOf
+            ? "grid-row-clickable var-row-warn"
+            : "grid-row-clickable";
+
+    private void ResetFilters()
+    {
+        _search = _status = _segment = "";
         Apply();
-        _ready = true;
     }
 
     private void Apply()
     {
         var q = _all.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(_status)) q = q.Where(o => o.Status.ToString() == _status);
+        if (!string.IsNullOrWhiteSpace(_segment)) q = q.Where(o => o.Segment == _segment);
         if (!string.IsNullOrWhiteSpace(_search))
         {
             var s = _search.Trim();
@@ -97,16 +184,20 @@ else
                 o.CustomerName.Contains(s, StringComparison.OrdinalIgnoreCase) ||
                 o.CustomerNumber.Contains(s, StringComparison.OrdinalIgnoreCase));
         }
-        _filtered = q.AsQueryable();
+        var list = q.ToList();
+        _filteredCount = list.Count;
+        _filtered = list.AsQueryable();
     }
 
-    // ---------------- Drill-down dialogs ----------------
+    private async Task Print() => await JS.InvokeVoidAsync("afcPrint", "");
+
+    // ---------------- Drill-down dialogs (with breadcrumb in title) ----------------
 
     private async Task ShowDrilldown(KpiDrilldownDialog.Args args)
     {
         var parameters = new DialogParameters
         {
-            Title = args.Title,
+            Title = "Sales Orders ▸ " + args.Title,
             Width = "780px",
             PrimaryAction = "Close",
             SecondaryAction = null
@@ -193,7 +284,7 @@ else
         if (order is null) return;
         var parameters = new DialogParameters
         {
-            Title = $"Order {order.Number}",
+            Title = $"Sales Orders ▸ Order {order.Number}",
             Width = "640px",
             PrimaryAction = "Close",
             SecondaryAction = null

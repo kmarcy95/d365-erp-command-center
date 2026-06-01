@@ -1,3 +1,234 @@
 @page "/executive-dashboard"
+@inject AppData AppData
+@inject IDialogService DialogService
 <PageTitle>Executive Dashboard · D365 ERP Command Center</PageTitle>
-<Placeholder Title="Executive Dashboard" Persona="Data Analyst" Blurb="KPI scorecards and interactive charts across finance, supply chain and the implementation." />
+
+<div class="page-header">
+    <div>
+        <h1>Executive Dashboard</h1>
+        <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">Data Analyst</FluentBadge>
+    </div>
+    <span class="page-asof">Alamo Foods Co. · as of @_asOf.ToString("MMM d, yyyy")</span>
+</div>
+
+@if (!_ready)
+{
+    <FluentProgressRing />
+}
+else
+{
+    <div class="kpi-grid">
+        <KpiCard Label="Revenue" Value="@Fmt.Money(_revenue)" Sub="Account 4000 (YTD)"
+                 Clickable="true" OnClick="ShowIncome" />
+        <KpiCard Label="Gross Margin %" Value="@Fmt.Pct(_grossMarginPct)" Sub="Gross profit ÷ revenue"
+                 Clickable="true" OnClick="ShowIncome" />
+        <KpiCard Label="Open Receivable" Value="@Fmt.Money(_openAr)" Sub="Unpaid customer invoices"
+                 Clickable="true" OnClick="ShowAr" />
+        <KpiCard Label="Open Payable" Value="@Fmt.Money(_openAp)" Sub="Unpaid vendor invoices" Positive="false"
+                 Clickable="true" OnClick="ShowAp" />
+        <KpiCard Label="Inventory Value" Value="@Fmt.Money(_inventoryValue)" Sub="On-hand at cost"
+                 Clickable="true" OnClick="ShowInventory" />
+        <KpiCard Label="Open Sales Orders" Value="@Fmt.Num(_openSoCount)" Sub="@($"Worth {Fmt.Money(_openSoValue)}")"
+                 Clickable="true" OnClick="ShowSalesOrders" />
+    </div>
+
+    <div class="chart-grid">
+        <Chart Title="Income statement ($)" Type="bar" Labels="@_incomeLabels" Series="@_incomeSeries" />
+        <Chart Title="AR vs AP outstanding by aging bucket ($)" Type="bar" Labels="@_agingLabels" Series="@_agingSeries" />
+        <Chart Title="Inventory value by category ($)" Type="doughnut" Labels="@_invLabels" Series="@_invSeries" />
+        <Chart Title="Sales orders by status" Type="doughnut" Labels="@_soLabels" Series="@_soSeries" />
+    </div>
+}
+
+@code {
+    private bool _ready;
+    private DateOnly _asOf;
+
+    private decimal _revenue, _cogs, _grossProfit, _opex, _operatingIncome, _grossMarginPct;
+    private decimal _openAr, _openAp, _inventoryValue, _openSoValue;
+    private int _openSoCount;
+
+    private static readonly string[] BucketOrder = { "Current", "1-30", "31-60", "61-90", "90+" };
+
+    private string[] _incomeLabels = Array.Empty<string>();
+    private List<ChartSeries> _incomeSeries = new();
+    private string[] _agingLabels = Array.Empty<string>();
+    private List<ChartSeries> _agingSeries = new();
+    private string[] _invLabels = Array.Empty<string>();
+    private List<ChartSeries> _invSeries = new();
+    private string[] _soLabels = Array.Empty<string>();
+    private List<ChartSeries> _soSeries = new();
+
+    private decimal Bal(string num) => AppData.Data.GlAccounts.Where(a => a.Number == num).Sum(a => a.Balance);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AppData.InitializeAsync();
+        var d = AppData.Data;
+        _asOf = d.AsOf;
+
+        // Income statement
+        _revenue = Bal("4000");
+        _cogs = Bal("5000");
+        _grossProfit = _revenue - _cogs;
+        _opex = Bal("6000") + Bal("6500") + Bal("6900");
+        _operatingIncome = _grossProfit - _opex;
+        _grossMarginPct = _revenue == 0 ? 0 : _grossProfit / _revenue * 100m;
+
+        // Working capital
+        _openAr = d.ArInvoices.Where(i => i.Status != InvoiceStatus.Paid).Sum(i => i.Amount);
+        _openAp = d.ApInvoices.Where(i => i.Status != InvoiceStatus.Paid).Sum(i => i.Amount);
+        _inventoryValue = d.Inventory.Sum(i => i.Value);
+
+        var openSo = d.SalesOrders.Where(s => s.Status != SoStatus.Invoiced).ToList();
+        _openSoCount = openSo.Count;
+        _openSoValue = openSo.Sum(s => s.Total);
+
+        // Charts
+        _incomeLabels = new[] { "Revenue", "COGS", "Gross Profit", "OpEx", "Operating Income" };
+        _incomeSeries = new List<ChartSeries>
+        {
+            new ChartSeries("Amount", new[] { (double)_revenue, (double)_cogs, (double)_grossProfit, (double)_opex, (double)_operatingIncome })
+        };
+
+        var arOpen = d.ArInvoices.Where(i => i.Status != InvoiceStatus.Paid).ToList();
+        var apOpen = d.ApInvoices.Where(i => i.Status != InvoiceStatus.Paid).ToList();
+        _agingLabels = BucketOrder;
+        _agingSeries = new List<ChartSeries>
+        {
+            new ChartSeries("AR", BucketOrder.Select(b => (double)arOpen.Where(i => i.AgeBucket == b).Sum(i => i.Amount)).ToArray()),
+            new ChartSeries("AP", BucketOrder.Select(b => (double)apOpen.Where(i => i.AgeBucket == b).Sum(i => i.Amount)).ToArray())
+        };
+
+        var invByCat = d.Inventory.GroupBy(i => i.Category)
+            .Select(g => new { Category = g.Key, Value = g.Sum(i => i.Value) })
+            .OrderByDescending(g => g.Value).ToList();
+        _invLabels = invByCat.Select(g => g.Category).ToArray();
+        _invSeries = new List<ChartSeries> { new ChartSeries("Value", invByCat.Select(g => (double)g.Value).ToArray()) };
+
+        var soByStatus = d.SalesOrders.GroupBy(s => s.Status).OrderBy(g => g.Key).ToList();
+        _soLabels = soByStatus.Select(g => g.Key.ToString()).ToArray();
+        _soSeries = new List<ChartSeries> { new ChartSeries("Orders", soByStatus.Select(g => (double)g.Count()).ToArray()) };
+
+        _ready = true;
+    }
+
+    // ---------------- Drill-down dialogs ----------------
+
+    private async Task Show(ExecDrilldownDialog.Args args)
+    {
+        var parameters = new DialogParameters
+        {
+            Title = args.Title,
+            Width = "720px",
+            PrimaryAction = "Close",
+            SecondaryAction = null
+        };
+        await DialogService.ShowDialogAsync<ExecDrilldownDialog>(args, parameters);
+    }
+
+    private async Task ShowIncome()
+    {
+        await Show(new ExecDrilldownDialog.Args
+        {
+            Title = "Income Statement",
+            Subtitle = $"Revenue {Fmt.Money(_revenue)} · Gross margin {Fmt.Pct(_grossMarginPct)} · Operating income {Fmt.Money(_operatingIncome)}.",
+            Kind = ExecDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "Amount ($)",
+            Labels = new[] { "Revenue", "COGS", "Gross Profit", "OpEx", "Operating Income" },
+            Data = new[] { _revenue, _cogs, _grossProfit, _opex, _operatingIncome },
+            Headers = new[] { "Line", "Amount" },
+            Rows = new List<string[]>
+            {
+                new[] { "Revenue", Fmt.Money(_revenue) },
+                new[] { "Cost of Goods Sold", Fmt.Money(_cogs) },
+                new[] { "Gross Profit", Fmt.Money(_grossProfit) },
+                new[] { "Operating Expenses", Fmt.Money(_opex) },
+                new[] { "Operating Income", Fmt.Money(_operatingIncome) }
+            }
+        });
+    }
+
+    private async Task ShowAr()
+    {
+        var open = AppData.Data.ArInvoices.Where(i => i.Status != InvoiceStatus.Paid).ToList();
+        var data = BucketOrder.Select(b => open.Where(i => i.AgeBucket == b).Sum(i => i.Amount)).ToArray();
+        await Show(new ExecDrilldownDialog.Args
+        {
+            Title = "Open Receivable by Aging Bucket",
+            Subtitle = $"{Fmt.Money(_openAr)} outstanding across {open.Count} open customer invoices.",
+            Kind = ExecDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "Outstanding ($)",
+            Labels = BucketOrder,
+            Data = data,
+            Headers = new[] { "Bucket", "Outstanding", "Invoices" },
+            Rows = BucketOrder.Select(b => new[]
+            {
+                b,
+                Fmt.Money(open.Where(i => i.AgeBucket == b).Sum(i => i.Amount)),
+                Fmt.Num(open.Count(i => i.AgeBucket == b))
+            }).ToList()
+        });
+    }
+
+    private async Task ShowAp()
+    {
+        var open = AppData.Data.ApInvoices.Where(i => i.Status != InvoiceStatus.Paid).ToList();
+        var data = BucketOrder.Select(b => open.Where(i => i.AgeBucket == b).Sum(i => i.Amount)).ToArray();
+        await Show(new ExecDrilldownDialog.Args
+        {
+            Title = "Open Payable by Aging Bucket",
+            Subtitle = $"{Fmt.Money(_openAp)} outstanding across {open.Count} open vendor invoices.",
+            Kind = ExecDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "Outstanding ($)",
+            Labels = BucketOrder,
+            Data = data,
+            Headers = new[] { "Bucket", "Outstanding", "Invoices" },
+            Rows = BucketOrder.Select(b => new[]
+            {
+                b,
+                Fmt.Money(open.Where(i => i.AgeBucket == b).Sum(i => i.Amount)),
+                Fmt.Num(open.Count(i => i.AgeBucket == b))
+            }).ToList()
+        });
+    }
+
+    private async Task ShowInventory()
+    {
+        var byCat = AppData.Data.Inventory.GroupBy(i => i.Category)
+            .Select(g => new { Category = g.Key, Value = g.Sum(i => i.Value), Skus = g.Count() })
+            .OrderByDescending(g => g.Value).ToList();
+        await Show(new ExecDrilldownDialog.Args
+        {
+            Title = "Inventory Value by Category",
+            Subtitle = $"{Fmt.Money(_inventoryValue)} on hand across {AppData.Data.Inventory.Count} SKUs.",
+            Kind = ExecDrilldownDialog.ChartKind.Doughnut,
+            DatasetLabel = "Value ($)",
+            Labels = byCat.Select(g => g.Category).ToArray(),
+            Data = byCat.Select(g => g.Value).ToArray(),
+            Headers = new[] { "Category", "Value", "SKUs" },
+            Rows = byCat.Select(g => new[] { g.Category, Fmt.Money(g.Value), Fmt.Num(g.Skus) }).ToList()
+        });
+    }
+
+    private async Task ShowSalesOrders()
+    {
+        var byStatus = AppData.Data.SalesOrders.GroupBy(s => s.Status).OrderBy(g => g.Key).ToList();
+        await Show(new ExecDrilldownDialog.Args
+        {
+            Title = "Sales Orders by Status",
+            Subtitle = $"{_openSoCount} open orders worth {Fmt.Money(_openSoValue)} of {AppData.Data.SalesOrders.Count} total.",
+            Kind = ExecDrilldownDialog.ChartKind.Doughnut,
+            DatasetLabel = "Orders",
+            Labels = byStatus.Select(g => g.Key.ToString()).ToArray(),
+            Data = byStatus.Select(g => (decimal)g.Count()).ToArray(),
+            Headers = new[] { "Status", "Orders", "Value" },
+            Rows = byStatus.Select(g => new[]
+            {
+                g.Key.ToString(),
+                Fmt.Num(g.Count()),
+                Fmt.Money(g.Sum(s => s.Total))
+            }).ToList()
+        });
+    }
+}

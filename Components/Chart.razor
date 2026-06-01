@@ -6,6 +6,10 @@
     {
         <h3>@Title</h3>
     }
+    @if (!string.IsNullOrEmpty(Hint))
+    {
+        <div class="chart-hint">@Hint</div>
+    }
     <div class="chart-canvas-wrap">
         <canvas id="@_id"></canvas>
     </div>
@@ -13,19 +17,27 @@
 
 @code {
     [Parameter] public string? Title { get; set; }
+    [Parameter] public string? Hint { get; set; }
     [Parameter] public string Type { get; set; } = "bar";   // bar | line | doughnut | pie
     [Parameter] public string[] Labels { get; set; } = Array.Empty<string>();
     [Parameter] public List<ChartSeries> Series { get; set; } = new();
     [Parameter] public bool Stacked { get; set; }
+    /// <summary>When set, clicking a bar/segment reports its label here (chart→table filter).</summary>
+    [Parameter] public EventCallback<string> OnLabelClick { get; set; }
 
     private readonly string _id = "c" + Guid.NewGuid().ToString("N");
+    private DotNetObjectReference<Chart>? _ref;
+
+    [JSInvokable]
+    public Task OnPointClick(string label) => OnLabelClick.InvokeAsync(label);
 
     private static readonly string[] Palette =
         { "#0f6cbd", "#2dd4bf", "#f59e0b", "#ef4444", "#8b5cf6", "#10b981", "#0ea5e9", "#ec4899" };
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        await JS.InvokeVoidAsync("afcCharts.render", _id, BuildConfig());
+        if (OnLabelClick.HasDelegate && _ref is null) _ref = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("afcCharts.render", _id, BuildConfig(), _ref);
     }
 
     private object BuildConfig()
@@ -84,5 +96,6 @@
     public async ValueTask DisposeAsync()
     {
         try { await JS.InvokeVoidAsync("afcCharts.destroy", _id); } catch { }
+        _ref?.Dispose();
     }
 }

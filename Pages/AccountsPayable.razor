@@ -54,7 +54,8 @@ else
     </div>
 
     <div class="chart-grid">
-        <Chart Title="Outstanding payable by aging bucket" Type="bar" Labels="@_agingLabels" Series="@_agingSeries" />
+        <Chart Title="Outstanding payable by aging bucket" Type="bar" Labels="@_agingLabels" Series="@_agingSeries"
+               Hint="Click a bucket to filter the table" OnLabelClick="OnBucketPick" />
     </div>
 
     <div class="filter-bar">
@@ -209,6 +210,9 @@ else
         _search = _status = _approval = _bucket = "";
         Apply();
     }
+
+    // Chart→table: click an aging bucket to filter the invoice table (toggle off on re-click).
+    private void OnBucketPick(string b) { _bucket = _bucket == b ? "" : b; Apply(); }
 
     private void Apply()
     {

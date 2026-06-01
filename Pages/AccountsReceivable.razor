@@ -54,7 +54,8 @@ else
     </div>
 
     <div class="chart-grid">
-        <Chart Title="Outstanding receivable by aging bucket" Type="bar" Labels="@_agingLabels" Series="@_agingSeries" />
+        <Chart Title="Outstanding receivable by aging bucket" Type="bar" Labels="@_agingLabels" Series="@_agingSeries"
+               Hint="Click a bucket to filter the table" OnLabelClick="OnBucketPick" />
     </div>
 
     <div class="filter-bar">
@@ -77,6 +78,13 @@ else
             <select value="@_segment" @onchange="@(e => { _segment = e.Value?.ToString() ?? ""; Apply(); })">
                 <option value="">All segments</option>
                 @foreach (var s in _segments) { <option value="@s">@s</option> }
+            </select>
+        </div>
+        <div class="filter-field">
+            <label>Aging bucket</label>
+            <select value="@_bucket" @onchange="@(e => { _bucket = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All buckets</option>
+                @foreach (var b in BucketOrder) { <option value="@b">@b</option> }
             </select>
         </div>
         <div class="filter-field" style="flex:1 1 160px">
@@ -138,6 +146,7 @@ else
     private string _status = "";
     private string _collection = "";
     private string _segment = "";
+    private string _bucket = "";
 
     private List<ArInvoice> _all = new();
     private IQueryable<ArInvoice> _filtered = Enumerable.Empty<ArInvoice>().AsQueryable();
@@ -214,9 +223,12 @@ else
 
     private void ResetFilters()
     {
-        _search = _status = _collection = _segment = "";
+        _search = _status = _collection = _segment = _bucket = "";
         Apply();
     }
+
+    // Chart→table: click an aging bucket to filter the invoice table (toggle off on re-click).
+    private void OnBucketPick(string b) { _bucket = _bucket == b ? "" : b; Apply(); }
 
     private void Apply()
     {
@@ -224,6 +236,7 @@ else
         if (!string.IsNullOrWhiteSpace(_status)) q = q.Where(i => i.Status.ToString() == _status);
         if (!string.IsNullOrWhiteSpace(_collection)) q = q.Where(i => i.CollectionStatus == _collection);
         if (!string.IsNullOrWhiteSpace(_segment)) q = q.Where(i => i.Segment == _segment);
+        if (!string.IsNullOrWhiteSpace(_bucket)) q = q.Where(i => i.AgeBucket == _bucket);
         if (!string.IsNullOrWhiteSpace(_search))
         {
             var s = _search.Trim();

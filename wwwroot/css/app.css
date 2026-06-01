@@ -414,6 +414,8 @@ h2 { font-weight: 700; letter-spacing: -.01em; color: var(--n-900); }
     border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); padding: 1.1rem 1.25rem;
 }
 .chart-card h3 { font-weight: 600; color: var(--n-700); letter-spacing: -.01em; }
+.chart-hint { font-size: .74rem; color: var(--text-muted); margin: -.4rem 0 .6rem; display: inline-flex; align-items: center; gap: .3rem; }
+.chart-hint::before { content: "☞"; opacity: .7; }
 
 /* ---- Data grids & tables ---- */
 .grid-wrap { border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); }

@@ -54,7 +54,8 @@ else
     </div>
 
     <div class="chart-grid">
-        <Chart Title="Balance by account type ($)" Type="doughnut" Labels="@_typeLabels" Series="@_typeSeries" />
+        <Chart Title="Balance by account type ($)" Type="doughnut" Labels="@_typeLabels" Series="@_typeSeries"
+               Hint="Click a slice to filter accounts by type" OnLabelClick="OnTypePick" />
     </div>
 
     <div class="filter-bar">
@@ -170,6 +171,9 @@ else
         _search = _type = _normal = "";
         Apply();
     }
+
+    // Chart→table: click an account-type slice to filter (toggle off on re-click).
+    private void OnTypePick(string t) { _type = _type == t ? "" : t; Apply(); }
 
     private void Apply()
     {

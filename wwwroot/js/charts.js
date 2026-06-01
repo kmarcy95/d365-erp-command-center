@@ -1,10 +1,25 @@
 // Chart.js interop for the D365 ERP Command Center.
 window.afcCharts = (function () {
     const registry = {};
-    function render(canvasId, config) {
+    function render(canvasId, config, dotnetRef) {
         const el = document.getElementById(canvasId);
         if (!el || typeof Chart === 'undefined') return;
         if (registry[canvasId]) { registry[canvasId].destroy(); }
+        // Optional click-to-filter: report the clicked label back to the .NET component.
+        if (dotnetRef) {
+            config.options = config.options || {};
+            config.options.onClick = function (evt, els, chart) {
+                if (els && els.length) {
+                    var label = chart.data.labels[els[0].index];
+                    dotnetRef.invokeMethodAsync('OnPointClick', String(label));
+                }
+            };
+            config.options.onHover = function (evt, els) {
+                if (evt && evt.native && evt.native.target) {
+                    evt.native.target.style.cursor = (els && els.length) ? 'pointer' : 'default';
+                }
+            };
+        }
         registry[canvasId] = new Chart(el.getContext('2d'), config);
     }
     function destroy(canvasId) {

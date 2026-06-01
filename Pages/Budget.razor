@@ -84,7 +84,8 @@ else
     </div>
 
     <div class="chart-grid">
-        <Chart Title="Budget vs actual by department ($)" Type="bar" Labels="@_deptLabels" Series="@_deptSeries" />
+        <Chart Title="Budget vs actual by department ($)" Type="bar" Labels="@_deptLabels" Series="@_deptSeries"
+               Hint="Click a department to filter the table" OnLabelClick="OnDeptPick" />
     </div>
 
     @* ---- Filter bar (#7) ---- *@
@@ -267,6 +268,9 @@ else
         _search = _dept = _cat = _varFilter = "";
         Apply();
     }
+
+    // Chart→table: click a department bar to filter the budget table (toggle off on re-click).
+    private void OnDeptPick(string d) { _dept = _dept == d ? "" : d; Apply(); }
 
     private void Apply()
     {

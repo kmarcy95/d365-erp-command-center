@@ -58,8 +58,10 @@ else
     </div>
 
     <div class="chart-grid">
-        <Chart Title="Inventory value by category ($)" Type="doughnut" Labels="@_categoryLabels" Series="@_categorySeries" />
-        <Chart Title="SKUs by stock health" Type="bar" Labels="@_stateLabels" Series="@_stateSeries" />
+        <Chart Title="Inventory value by category ($)" Type="doughnut" Labels="@_categoryLabels" Series="@_categorySeries"
+               Hint="Click a slice to filter the table by category" OnLabelClick="OnCategoryPick" />
+        <Chart Title="SKUs by stock health" Type="bar" Labels="@_stateLabels" Series="@_stateSeries"
+               Hint="Click a bar to filter by stock health" OnLabelClick="OnStatePick" />
     </div>
 
     <div class="filter-bar">
@@ -261,6 +263,10 @@ else
         _search = _category = _warehouse = _stock = _abc = "";
         Apply();
     }
+
+    // Chart→table: clicking a chart label sets (or toggles off) the matching filter.
+    private void OnCategoryPick(string c) { _category = _category == c ? "" : c; Apply(); }
+    private void OnStatePick(string s) { _stock = _stock == s ? "" : s; Apply(); }
 
     private void Apply()
     {

@@ -1,0 +1,32 @@
+@implements IDialogContentComponent<ApInvoice>
+
+<div class="dlg-content">
+    <div class="dlg-facts">
+        <div><span class="dlg-fact-label">Invoice</span><span>@Content.Number</span></div>
+        <div><span class="dlg-fact-label">Vendor</span><span>@Content.VendorName (@Content.VendorNumber)</span></div>
+        <div><span class="dlg-fact-label">Status</span><span><StatusBadge Text="@Content.Status.ToString()" Kind="@StatusKind(Content.Status)" /></span></div>
+        <div><span class="dlg-fact-label">Approval</span><span><StatusBadge Text="@Content.ApprovalStatus" Kind="@(Content.ApprovalStatus == "Approved" ? "good" : "warn")" /></span></div>
+    </div>
+
+    <h4 class="dlg-section">Aging</h4>
+    <table class="afc-table dlg-table">
+        <tbody>
+            <tr><td>Invoice date</td><td class="num">@Content.InvoiceDate.ToString("yyyy-MM-dd")</td></tr>
+            <tr><td>Due date</td><td class="num">@Content.DueDate.ToString("yyyy-MM-dd")</td></tr>
+            <tr><td>Days outstanding</td><td class="num">@(Content.Status == InvoiceStatus.Paid ? "Paid" : Fmt.Num(Content.AgeDays))</td></tr>
+            <tr><td>Aging bucket</td><td class="num">@Content.AgeBucket</td></tr>
+            <tr class="total"><td>Amount</td><td class="num">@Fmt.Money(Content.Amount)</td></tr>
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter] public ApInvoice Content { get; set; } = default!;
+
+    private static string StatusKind(InvoiceStatus s) => s switch
+    {
+        InvoiceStatus.Paid => "good",
+        InvoiceStatus.Overdue => "bad",
+        _ => "warn"
+    };
+}

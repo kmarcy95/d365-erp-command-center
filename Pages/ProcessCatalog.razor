@@ -1,39 +1,95 @@
 @page "/process-catalog"
 @inject AppData AppData
+@inject UiState Ui
+@inject IJSRuntime JS
 <PageTitle>Process Catalog · D365 ERP Command Center</PageTitle>
 
 <style>
     .flow { display:flex; gap:.5rem; flex-wrap:wrap; align-items:stretch; }
-    .flow-step { background:#fff; border:1px solid #edebe9; border-radius:8px; padding:.7rem .9rem; min-width:150px; flex:1; }
-    .flow-arrow { align-self:center; color:#0f6cbd; font-weight:700; }
+    .flow-step { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:.7rem .9rem; min-width:190px; flex:1; }
+    .flow-step .fs-head { font-weight:600; }
+    .flow-step .fs-role { font-size:.8rem; color:var(--text-muted); margin:.1rem 0 .3rem; }
+    .flow-arrow { align-self:center; color:var(--afc-accent); font-weight:700; }
+    .process-flow-card { padding:1.1rem 1.3rem; margin-bottom:1.2rem; }
+    .process-flow-card h2 { margin:.1rem 0 .2rem; }
 </style>
+
+<div class="print-only print-header">
+    <div class="ph-co">Alamo Foods Co.</div>
+    <div class="ph-report">Process Catalog — end-to-end business processes</div>
+    <div class="ph-meta">
+        As of @AppData.Data.AsOf.ToString("MMM d, yyyy") · Environment @Ui.EnvName ·
+        Generated @DateTime.Now.ToString("MMM d, yyyy h:mm tt")
+    </div>
+</div>
 
 <div class="page-header">
     <div>
         <h1>Process Catalog</h1>
         <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">Business Analyst</FluentBadge>
     </div>
+    <FluentButton Appearance="Appearance.Stealth" OnClick="Print">🖨 Print / PDF</FluentButton>
 </div>
 
-@if (!_ready)
+<PageMeta AsOf="@AppData.Data.AsOf" GeneratedAtUtc="@AppData.Data.GeneratedAtUtc" Module="Implementation · Processes" />
+
+@if (_error)
 {
-    <FluentProgressRing />
+    <ErrorBanner Message="Couldn't load the process catalog. Use the account menu in the header to reset the demo data." />
+}
+else if (!_ready)
+{
+    <Skeleton Variant="page" />
 }
 else
 {
-    @foreach (var flow in _flows)
+    <div class="kpi-grid">
+        <KpiCard Label="Processes" Value="@Fmt.Num(_flows.Count)" Sub="End-to-end value streams" />
+        <KpiCard Label="Process Steps" Value="@Fmt.Num(_totalSteps)" Sub="Across all flows" />
+        <KpiCard Label="Key Controls" Value="@Fmt.Num(_totalControls)" Sub="Approvals & checks" />
+        <KpiCard Label="Avg Cycle Time" Value="@($"{_avgCycleDays:0.0} days")" Sub="Per process, end to end" />
+    </div>
+
+    <div class="filter-bar">
+        <div class="filter-field">
+            <label>Process</label>
+            <select value="@_process" @onchange="@(e => { _process = e.Value?.ToString() ?? ""; })">
+                <option value="">All processes</option>
+                @foreach (var f in _flows) { <option value="@f.Code">@f.Code — @f.Name</option> }
+            </select>
+        </div>
+    </div>
+
+    @foreach (var flow in Shown)
     {
         <FluentCard Class="process-flow-card">
             <h2>@flow.Name (@flow.Code)</h2>
-            <p>@flow.Description</p>
+            <p class="dlg-sub">@flow.Description</p>
+            <div class="proc-summary">
+                <span>Owner: <b>@flow.Owner</b></span>
+                <span>Steps: <b>@flow.Steps.Count</b></span>
+                <span>Controls: <b>@flow.ControlCount</b></span>
+                <span>Cycle time: <b>@($"{flow.TotalCycleTimeHrs:0} hrs (~{flow.TotalCycleTimeHrs / 24:0.0} days)")</b></span>
+                <span>Traced requirements: <b>@LinkedReqCount(flow)</b></span>
+            </div>
             <div class="flow">
                 @for (var i = 0; i < flow.Steps.Count; i++)
                 {
                     var step = flow.Steps[i];
                     <div class="flow-step">
-                        <div><strong>@step.Order. @step.Name</strong></div>
-                        <div>@step.Role</div>
+                        <div class="fs-head">@step.Order. @step.Name</div>
+                        <div class="fs-role">@step.Role</div>
                         <div><StatusBadge Text="@step.System" Kind="info" /></div>
+                        <div class="fs-desc">@step.Description</div>
+                        @if (!string.IsNullOrEmpty(step.Control))
+                        {
+                            <div class="fs-control">🔒 @step.Control</div>
+                        }
+                        <div class="fs-cycle">⏱ @FormatHrs(step.CycleTimeHrs)</div>
+                        @if (step.RequirementCodes.Length > 0)
+                        {
+                            <div class="fs-reqs">Traces: @string.Join(", ", step.RequirementCodes)</div>
+                        }
                     </div>
                     @if (i < flow.Steps.Count - 1)
                     {
@@ -47,12 +103,37 @@ else
 
 @code {
     private bool _ready;
+    private bool _error;
+    private string _process = "";
     private List<ProcessFlow> _flows = new();
+    private int _totalSteps, _totalControls;
+    private double _avgCycleDays;
+
+    private IEnumerable<ProcessFlow> Shown =>
+        string.IsNullOrEmpty(_process) ? _flows : _flows.Where(f => f.Code == _process);
 
     protected override async Task OnInitializedAsync()
     {
-        await AppData.InitializeAsync();
-        _flows = AppData.Data.Processes.ToList();
-        _ready = true;
+        try
+        {
+            await AppData.InitializeAsync();
+            _flows = AppData.Data.Processes.ToList();
+            _totalSteps = _flows.Sum(f => f.Steps.Count);
+            _totalControls = _flows.Sum(f => f.ControlCount);
+            _avgCycleDays = _flows.Count == 0 ? 0 : _flows.Average(f => f.TotalCycleTimeHrs) / 24.0;
+            _ready = true;
+        }
+        catch
+        {
+            _error = true;
+        }
     }
+
+    private async Task Print() => await JS.InvokeVoidAsync("afcPrint", "");
+
+    private static int LinkedReqCount(ProcessFlow f) =>
+        f.Steps.SelectMany(s => s.RequirementCodes).Distinct().Count();
+
+    private static string FormatHrs(double hrs) =>
+        hrs >= 24 ? $"{hrs / 24:0.0} days" : $"{hrs:0} hrs";
 }

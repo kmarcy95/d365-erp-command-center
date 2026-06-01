@@ -531,3 +531,7 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible,
     border:1px solid var(--border); color: var(--text); }
 .tech-chip { font-size:.78rem; padding:.22rem .55rem; border-radius:6px; background: var(--afc-accent-weak);
     border:1px solid #cfe3f5; color:#0f548c; font-weight:600; }
+
+/* Home persona cards as links */
+.persona-card--link { cursor: pointer; transition: transform .12s ease, box-shadow .12s ease; }
+.persona-card--link:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }

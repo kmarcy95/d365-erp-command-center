@@ -1,5 +1,6 @@
 @page "/"
 @inject NavigationManager Nav
+@inject AppData AppData
 
 <PageTitle>Overview · D365 ERP Command Center</PageTitle>
 
@@ -20,30 +21,104 @@
     </div>
 </div>
 
+<h2 class="section-title">Project health</h2>
+@if (_ready)
+{
+    <div class="health-band">
+        <KpiCard Label="Delivery Status" Value="@RagLabel(_rag)" Sub="Overall RAG" Positive="@(_rag is RagStatus.OnTrack or RagStatus.Complete)"
+                 Clickable="true" OnClick="@(() => Nav.NavigateTo("status-reports"))" />
+        <KpiCard Label="% Complete" Value="@Fmt.Pct(_overallPct)" Sub="Duration-weighted"
+                 Clickable="true" OnClick="@(() => Nav.NavigateTo("roadmap"))" />
+        <KpiCard Label="Go-Live" Value="@_goLive" Sub="Countdown to cutover"
+                 Clickable="true" OnClick="@(() => Nav.NavigateTo("roadmap"))" />
+        <KpiCard Label="Open High Risks" Value="@Fmt.Num(_highRisks)" Sub="RAID · severity High" Positive="false"
+                 Clickable="true" OnClick="@(() => Nav.NavigateTo("raid"))" />
+        <KpiCard Label="Test Pass Rate" Value="@Fmt.Pct(_passRate)" Sub="Of executed cases"
+                 Clickable="true" OnClick="@(() => Nav.NavigateTo("test-management"))" />
+    </div>
+}
+
 <h2 class="section-title">Four roles, one application</h2>
 <div class="persona-grid">
-    <FluentCard Class="persona-card">
+    <FluentCard Class="persona-card persona-card--link" @onclick="@(() => Nav.NavigateTo("executive-dashboard"))">
         <div class="persona-emoji">📊</div>
         <h3>Data Analyst</h3>
         <p>Executive KPI dashboard and financial analytics — revenue trends, AP/AR aging, budget vs actual, inventory turns — modeled on Power BI-style reporting.</p>
+        <div class="kpi-drill">Open Executive Dashboard →</div>
     </FluentCard>
-    <FluentCard Class="persona-card">
+    <FluentCard Class="persona-card persona-card--link" @onclick="@(() => Nav.NavigateTo("general-ledger"))">
         <div class="persona-emoji">🏦</div>
         <h3>D365 ERP Analyst</h3>
         <p>Real F&amp;O modules: General Ledger, Accounts Payable/Receivable, Procurement, Inventory and Sales — with consistent, drillable data.</p>
+        <div class="kpi-drill">Open General Ledger →</div>
     </FluentCard>
-    <FluentCard Class="persona-card">
+    <FluentCard Class="persona-card persona-card--link" @onclick="@(() => Nav.NavigateTo("fit-gap"))">
         <div class="persona-emoji">📋</div>
         <h3>Business Analyst</h3>
         <p>Fit-gap analysis, a requirements traceability matrix, UAT test management and an end-to-end process catalog (P2P / O2C / R2R).</p>
+        <div class="kpi-drill">Open Fit-Gap Analysis →</div>
     </FluentCard>
-    <FluentCard Class="persona-card">
+    <FluentCard Class="persona-card persona-card--link" @onclick="@(() => Nav.NavigateTo("roadmap"))">
         <div class="persona-emoji">🗓️</div>
         <h3>Project Manager</h3>
         <p>A Success-by-Design roadmap with milestones, a live RAID log with risk heatmap, and auto-generated executive status reports.</p>
+        <div class="kpi-drill">Open Roadmap →</div>
     </FluentCard>
 </div>
 
 <FluentMessageBar Title="Self-contained demo" Intent="MessageIntent.Info" AllowDismiss="false" Class="home-note">
     Everything runs in your browser — seeded with a coherent demo dataset and saved to local storage. No login, no backend, nothing to install.
 </FluentMessageBar>
+
+@code {
+    private bool _ready;
+    private RagStatus _rag;
+    private decimal _overallPct;
+    private int _highRisks;
+    private decimal _passRate;
+    private string _goLive = "—";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await AppData.InitializeAsync();
+            var d = AppData.Data;
+
+            var phases = d.Phases.ToList();
+            double totalDays = phases.Sum(p => Math.Max(1, p.End.DayNumber - p.Start.DayNumber));
+            _overallPct = totalDays <= 0 ? 0m
+                : (decimal)(phases.Sum(p => (p.End.DayNumber - p.Start.DayNumber) * (double)p.PercentComplete) / totalDays);
+
+            _highRisks = d.Raid.Count(r => r.Severity == "High" && r.Status != "Closed");
+            bool anyHighOpenRisk = _highRisks > 0;
+            if (phases.Any(p => p.Rag == RagStatus.OffTrack) || anyHighOpenRisk) _rag = RagStatus.OffTrack;
+            else if (phases.Any(p => p.Rag == RagStatus.AtRisk)) _rag = RagStatus.AtRisk;
+            else _rag = RagStatus.OnTrack;
+
+            var tests = d.TestCases.ToList();
+            int executed = tests.Count(t => t.Result != TestResult.NotRun);
+            int passed = tests.Count(t => t.Result == TestResult.Pass);
+            _passRate = executed == 0 ? 0m : (decimal)passed / executed * 100m;
+
+            var goLive = d.Milestones.FirstOrDefault(m => m.Name.Contains("Go-live", StringComparison.OrdinalIgnoreCase) && !m.Name.Contains("readiness", StringComparison.OrdinalIgnoreCase));
+            if (goLive is not null)
+            {
+                int days = goLive.DueDate.DayNumber - d.AsOf.DayNumber;
+                _goLive = days > 0 ? $"{days} days" : "Live";
+            }
+
+            _ready = true;
+        }
+        catch { /* health band simply hides if data unavailable */ }
+    }
+
+    private static string RagLabel(RagStatus r) => r switch
+    {
+        RagStatus.OnTrack => "On Track",
+        RagStatus.AtRisk => "At Risk",
+        RagStatus.OffTrack => "Off Track",
+        RagStatus.Complete => "Complete",
+        _ => r.ToString()
+    };
+}

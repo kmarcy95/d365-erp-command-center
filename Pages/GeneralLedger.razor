@@ -1,3 +1,191 @@
 @page "/general-ledger"
+@inject AppData AppData
+@inject IJSRuntime JS
+@inject IDialogService DialogService
 <PageTitle>General Ledger · D365 ERP Command Center</PageTitle>
-<Placeholder Title="General Ledger" Persona="D365 ERP Analyst" Blurb="Chart of accounts, journal entries and balances." />
+
+<div class="page-header">
+    <div>
+        <h1>General Ledger</h1>
+        <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">D365 ERP Analyst</FluentBadge>
+    </div>
+    <FluentButton Appearance="Appearance.Accent" OnClick="Export">Export CSV</FluentButton>
+</div>
+
+@if (!_ready)
+{
+    <FluentProgressRing />
+}
+else
+{
+    <div class="kpi-grid">
+        <KpiCard Label="Total Assets" Value="@Fmt.Money(_assets)" Sub="Asset accounts"
+                 Clickable="true" OnClick="ShowAssets" />
+        <KpiCard Label="Total Liabilities" Value="@Fmt.Money(_liabilities)" Sub="Liability accounts"
+                 Clickable="true" OnClick="ShowLiabilities" />
+        <KpiCard Label="Total Equity" Value="@Fmt.Money(_equity)" Sub="Equity accounts"
+                 Clickable="true" OnClick="ShowEquity" />
+        <KpiCard Label="Trial Balance" Value="@(_balanced ? "Balanced" : "Out")" Sub="Debits = Credits" Positive="@_balanced"
+                 Clickable="true" OnClick="ShowTrialBalance" />
+    </div>
+
+    <div class="chart-grid">
+        <Chart Title="Balance by account type ($)" Type="doughnut" Labels="@_typeLabels" Series="@_typeSeries" />
+    </div>
+
+    <FluentSearch @bind-Value="_search" @bind-Value:after="Apply" Placeholder="Search account number or name…" Class="afc-search" />
+
+    <p class="grid-hint">Click any account for its balance and recent journal entries.</p>
+    <div class="grid-wrap">
+        <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="GlAccount"
+                        OnRowClick="@(async (FluentDataGridRow<GlAccount> row) => await OpenAccount(row.Item))"
+                        RowClass="@(_ => "grid-row-clickable")">
+            <PropertyColumn Property="@(a => a.Number)" Title="Account" Sortable="true"
+                            IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Ascending" />
+            <PropertyColumn Property="@(a => a.Name)" Title="Name" Sortable="true" />
+            <PropertyColumn Property="@(a => a.Type)" Title="Type" Sortable="true" />
+            <TemplateColumn Title="Debit ($)" Align="Align.End" Sortable="false">
+                @(IsDebit(context) ? Fmt.Num(context.Balance) : "")
+            </TemplateColumn>
+            <TemplateColumn Title="Credit ($)" Align="Align.End" Sortable="false">
+                @(IsDebit(context) ? "" : Fmt.Num(context.Balance))
+            </TemplateColumn>
+        </FluentDataGrid>
+    </div>
+
+    <FluentPaginator State="@_pagination" />
+}
+
+@code {
+    private bool _ready;
+    private string _search = "";
+
+    private List<GlAccount> _all = new();
+    private IQueryable<GlAccount> _filtered = Enumerable.Empty<GlAccount>().AsQueryable();
+    private readonly PaginationState _pagination = new() { ItemsPerPage = 15 };
+
+    private decimal _assets, _liabilities, _equity, _debitTotal, _creditTotal;
+    private bool _balanced;
+
+    private string[] _typeLabels = Array.Empty<string>();
+    private List<ChartSeries> _typeSeries = new();
+
+    private static bool IsDebit(GlAccount a) => a.Type is AccountType.Asset or AccountType.Expense;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AppData.InitializeAsync();
+        _all = AppData.Data.GlAccounts.ToList();
+
+        _assets = _all.Where(a => a.Type == AccountType.Asset).Sum(a => a.Balance);
+        _liabilities = _all.Where(a => a.Type == AccountType.Liability).Sum(a => a.Balance);
+        _equity = _all.Where(a => a.Type == AccountType.Equity).Sum(a => a.Balance);
+        _debitTotal = _all.Where(IsDebit).Sum(a => a.Balance);
+        _creditTotal = _all.Where(a => !IsDebit(a)).Sum(a => a.Balance);
+        _balanced = Math.Abs(_debitTotal - _creditTotal) <= 1m;
+
+        var byType = _all.GroupBy(a => a.Type)
+            .Select(g => new { Type = g.Key, Total = g.Sum(a => Math.Abs(a.Balance)) })
+            .OrderByDescending(g => g.Total)
+            .ToList();
+        _typeLabels = byType.Select(g => g.Type.ToString()).ToArray();
+        _typeSeries = new List<ChartSeries> { new ChartSeries("Balance", byType.Select(g => (double)g.Total).ToArray()) };
+
+        Apply();
+        _ready = true;
+    }
+
+    private void Apply()
+    {
+        var q = _all.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            var s = _search.Trim();
+            q = q.Where(a =>
+                a.Number.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                a.Name.Contains(s, StringComparison.OrdinalIgnoreCase));
+        }
+        _filtered = q.AsQueryable();
+    }
+
+    // ---------------- Drill-down dialogs ----------------
+
+    private async Task Show(ExecDrilldownDialog.Args args)
+    {
+        var parameters = new DialogParameters
+        {
+            Title = args.Title,
+            Width = "720px",
+            PrimaryAction = "Close",
+            SecondaryAction = null
+        };
+        await DialogService.ShowDialogAsync<ExecDrilldownDialog>(args, parameters);
+    }
+
+    private async Task ShowByType(AccountType type, string title)
+    {
+        var accts = _all.Where(a => a.Type == type).OrderByDescending(a => a.Balance).ToList();
+        await Show(new ExecDrilldownDialog.Args
+        {
+            Title = title,
+            Subtitle = $"{accts.Count} {type.ToString().ToLower()} accounts totaling {Fmt.Money(accts.Sum(a => a.Balance))}.",
+            Kind = ExecDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "Balance ($)",
+            Labels = accts.Select(a => a.Name).ToArray(),
+            Data = accts.Select(a => a.Balance).ToArray(),
+            Headers = new[] { "Account", "Name", "Balance" },
+            Rows = accts.Select(a => new[] { a.Number, a.Name, Fmt.Money(a.Balance) }).ToList()
+        });
+    }
+
+    private Task ShowAssets() => ShowByType(AccountType.Asset, "Asset Accounts");
+    private Task ShowLiabilities() => ShowByType(AccountType.Liability, "Liability Accounts");
+    private Task ShowEquity() => ShowByType(AccountType.Equity, "Equity Accounts");
+
+    private async Task ShowTrialBalance()
+    {
+        await Show(new ExecDrilldownDialog.Args
+        {
+            Title = "Trial Balance",
+            Subtitle = $"Debits {Fmt.Money(_debitTotal)} vs credits {Fmt.Money(_creditTotal)} — {(_balanced ? "balanced" : "out of balance")}.",
+            Kind = ExecDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "Total ($)",
+            Labels = new[] { "Debits", "Credits" },
+            Data = new[] { _debitTotal, _creditTotal },
+            Headers = new[] { "Side", "Amount" },
+            Rows = new List<string[]>
+            {
+                new[] { "Total Debits", Fmt.Money(_debitTotal) },
+                new[] { "Total Credits", Fmt.Money(_creditTotal) }
+            }
+        });
+    }
+
+    private async Task OpenAccount(GlAccount? a)
+    {
+        if (a is null) return;
+        var parameters = new DialogParameters
+        {
+            Title = $"{a.Number} · {a.Name}",
+            Width = "640px",
+            PrimaryAction = "Close",
+            SecondaryAction = null
+        };
+        await DialogService.ShowDialogAsync<GlAccountDetailDialog>(a, parameters);
+    }
+
+    private async Task Export()
+    {
+        var headers = new[] { "Number", "Name", "Type", "Balance", "Normal Balance" };
+        var rows = _all.Select(a => new[]
+        {
+            a.Number,
+            a.Name,
+            a.Type.ToString(),
+            a.Balance.ToString("0.##"),
+            IsDebit(a) ? "Debit" : "Credit"
+        });
+        var csv = Csv.Build(headers, rows);
+        await JS.InvokeVoidAsync("afcDownload", "general-ledger.csv", csv);
+    }
+}

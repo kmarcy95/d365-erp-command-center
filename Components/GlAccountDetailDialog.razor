@@ -1,0 +1,66 @@
+@implements IDialogContentComponent<GlAccount>
+@inject AppData AppData
+
+<div class="dlg-content">
+    <div class="dlg-facts">
+        <div><span class="dlg-fact-label">Account</span><span>@Content.Number</span></div>
+        <div><span class="dlg-fact-label">Name</span><span>@Content.Name</span></div>
+        <div><span class="dlg-fact-label">Type</span><span>@Content.Type</span></div>
+        <div><span class="dlg-fact-label">Normal balance</span><span>@(IsDebit ? "Debit" : "Credit")</span></div>
+    </div>
+
+    <h4 class="dlg-section">Balance</h4>
+    <table class="afc-table dlg-table">
+        <tbody>
+            <tr class="total"><td>@(IsDebit ? "Debit balance" : "Credit balance")</td><td class="num">@Fmt.Money(Content.Balance)</td></tr>
+        </tbody>
+    </table>
+
+    <h4 class="dlg-section">Recent Journal Entries</h4>
+    @if (_entries.Count == 0)
+    {
+        <p class="dlg-sub">No journal entries posted to this account.</p>
+    }
+    else
+    {
+        <table class="afc-table dlg-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Department</th>
+                    <th>Description</th>
+                    <th class="num">Debit</th>
+                    <th class="num">Credit</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var je in _entries)
+                {
+                    <tr>
+                        <td>@je.Date.ToString("yyyy-MM-dd")</td>
+                        <td>@je.Department</td>
+                        <td>@je.Description</td>
+                        <td class="num">@(je.Debit > 0 ? Fmt.Num(je.Debit) : "")</td>
+                        <td class="num">@(je.Credit > 0 ? Fmt.Num(je.Credit) : "")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    [Parameter] public GlAccount Content { get; set; } = default!;
+
+    private List<JournalEntry> _entries = new();
+
+    private bool IsDebit => Content.Type is AccountType.Asset or AccountType.Expense;
+
+    protected override void OnInitialized()
+    {
+        _entries = AppData.Data.JournalEntries
+            .Where(j => j.AccountNumber == Content.Number)
+            .OrderByDescending(j => j.Date)
+            .ToList();
+    }
+}

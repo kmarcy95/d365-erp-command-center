@@ -1,0 +1,28 @@
+@implements IDialogContentComponent<BudgetLine>
+
+<div class="dlg-content">
+    <div class="dlg-facts">
+        <div><span class="dlg-fact-label">Department</span><span>@Content.Department</span></div>
+        <div><span class="dlg-fact-label">Category</span><span>@Content.Category</span></div>
+        <div><span class="dlg-fact-label">Status</span><span><StatusBadge Text="@StatusText" Kind="@StatusKind" /></span></div>
+    </div>
+
+    <h4 class="dlg-section">Budget vs Actual</h4>
+    <table class="afc-table dlg-table">
+        <tbody>
+            <tr><td>Budget</td><td class="num">@Fmt.Money(Content.Budget)</td></tr>
+            <tr><td>Actual</td><td class="num">@Fmt.Money(Content.Actual)</td></tr>
+            <tr><td>Variance</td><td class="num">@Fmt.Money(Content.Variance)</td></tr>
+            <tr class="total"><td>Variance %</td><td class="num">@Fmt.Pct(Content.VariancePct)</td></tr>
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter] public BudgetLine Content { get; set; } = default!;
+
+    // Variance is Budget - Actual: positive = under budget (good), negative = over budget (bad).
+    private bool OverBudget => Content.Variance < 0;
+    private string StatusText => OverBudget ? "Over budget" : "Under budget";
+    private string StatusKind => OverBudget ? "bad" : "good";
+}

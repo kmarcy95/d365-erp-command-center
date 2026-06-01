@@ -1,3 +1,206 @@
 @page "/budget"
+@inject AppData AppData
+@inject IJSRuntime JS
+@inject IDialogService DialogService
 <PageTitle>Budget vs Actual · D365 ERP Command Center</PageTitle>
-<Placeholder Title="Budget vs Actual" Persona="D365 ERP Analyst" Blurb="Budget control and variance by department and cost center." />
+
+<div class="page-header">
+    <div>
+        <h1>Budget vs Actual</h1>
+        <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">D365 ERP Analyst</FluentBadge>
+    </div>
+    <FluentButton Appearance="Appearance.Accent" OnClick="Export">Export CSV</FluentButton>
+</div>
+
+@if (!_ready)
+{
+    <FluentProgressRing />
+}
+else
+{
+    <div class="kpi-grid">
+        <KpiCard Label="Total Budget" Value="@Fmt.Money(_totalBudget)" Sub="Across all departments"
+                 Clickable="true" OnClick="ShowByDepartment" />
+        <KpiCard Label="Total Actual" Value="@Fmt.Money(_totalActual)" Sub="Spend to date"
+                 Clickable="true" OnClick="ShowByCategory" />
+        <KpiCard Label="Variance" Value="@Fmt.Money(_totalVariance)" Sub="@(_totalVariance >= 0 ? "Under budget" : "Over budget")" Positive="@(_totalVariance >= 0)"
+                 Clickable="true" OnClick="ShowByDepartment" />
+        <KpiCard Label="Over Budget" Value="@Fmt.Num(_overCount)" Sub="Lines exceeding budget" Positive="false"
+                 Clickable="true" OnClick="ShowOverBudget" />
+    </div>
+
+    <div class="chart-grid">
+        <Chart Title="Budget vs actual by department ($)" Type="bar" Labels="@_deptLabels" Series="@_deptSeries" />
+    </div>
+
+    <FluentSearch @bind-Value="_search" @bind-Value:after="Apply" Placeholder="Search department or category…" Class="afc-search" />
+
+    <p class="grid-hint">Click any line for its budget vs actual detail.</p>
+    <div class="grid-wrap">
+        <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="BudgetLine"
+                        OnRowClick="@(async (FluentDataGridRow<BudgetLine> row) => await OpenLine(row.Item))"
+                        RowClass="@(_ => "grid-row-clickable")">
+            <PropertyColumn Property="@(b => b.Department)" Title="Department" Sortable="true"
+                            IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Ascending" />
+            <PropertyColumn Property="@(b => b.Category)" Title="Category" Sortable="true" />
+            <PropertyColumn Property="@(b => b.Budget)" Format="N0" Title="Budget ($)" Sortable="true" Align="Align.End" />
+            <PropertyColumn Property="@(b => b.Actual)" Format="N0" Title="Actual ($)" Sortable="true" Align="Align.End" />
+            <PropertyColumn Property="@(b => b.Variance)" Format="N0" Title="Variance ($)" Sortable="true" Align="Align.End" />
+            <TemplateColumn Title="Status" Sortable="false">
+                <StatusBadge Text="@(context.Variance < 0 ? "Over" : "Under")" Kind="@(context.Variance < 0 ? "bad" : "good")" />
+            </TemplateColumn>
+        </FluentDataGrid>
+    </div>
+
+    <FluentPaginator State="@_pagination" />
+}
+
+@code {
+    private bool _ready;
+    private string _search = "";
+
+    private List<BudgetLine> _all = new();
+    private IQueryable<BudgetLine> _filtered = Enumerable.Empty<BudgetLine>().AsQueryable();
+    private readonly PaginationState _pagination = new() { ItemsPerPage = 15 };
+
+    private decimal _totalBudget, _totalActual, _totalVariance;
+    private int _overCount;
+
+    private string[] _deptLabels = Array.Empty<string>();
+    private List<ChartSeries> _deptSeries = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AppData.InitializeAsync();
+        _all = AppData.Data.Budget.ToList();
+
+        _totalBudget = _all.Sum(b => b.Budget);
+        _totalActual = _all.Sum(b => b.Actual);
+        _totalVariance = _totalBudget - _totalActual;
+        _overCount = _all.Count(b => b.Variance < 0);
+
+        var byDept = _all.GroupBy(b => b.Department)
+            .Select(g => new { Dept = g.Key, Budget = g.Sum(b => b.Budget), Actual = g.Sum(b => b.Actual) })
+            .OrderByDescending(g => g.Budget)
+            .ToList();
+        _deptLabels = byDept.Select(g => g.Dept).ToArray();
+        _deptSeries = new List<ChartSeries>
+        {
+            new ChartSeries("Budget", byDept.Select(g => (double)g.Budget).ToArray()),
+            new ChartSeries("Actual", byDept.Select(g => (double)g.Actual).ToArray())
+        };
+
+        Apply();
+        _ready = true;
+    }
+
+    private void Apply()
+    {
+        var q = _all.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            var s = _search.Trim();
+            q = q.Where(b =>
+                b.Department.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                b.Category.Contains(s, StringComparison.OrdinalIgnoreCase));
+        }
+        _filtered = q.AsQueryable();
+    }
+
+    // ---------------- Drill-down dialogs ----------------
+
+    private async Task Show(ExecDrilldownDialog.Args args)
+    {
+        var parameters = new DialogParameters
+        {
+            Title = args.Title,
+            Width = "720px",
+            PrimaryAction = "Close",
+            SecondaryAction = null
+        };
+        await DialogService.ShowDialogAsync<ExecDrilldownDialog>(args, parameters);
+    }
+
+    private async Task ShowByDepartment()
+    {
+        var byDept = _all.GroupBy(b => b.Department)
+            .Select(g => new { Dept = g.Key, Budget = g.Sum(b => b.Budget), Actual = g.Sum(b => b.Actual) })
+            .OrderByDescending(g => g.Budget)
+            .ToList();
+        await Show(new ExecDrilldownDialog.Args
+        {
+            Title = "Variance by Department",
+            Subtitle = $"{Fmt.Money(_totalBudget)} budgeted vs {Fmt.Money(_totalActual)} actual ({Fmt.Money(_totalVariance)} variance).",
+            Kind = ExecDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "Variance ($)",
+            Labels = byDept.Select(g => g.Dept).ToArray(),
+            Data = byDept.Select(g => g.Budget - g.Actual).ToArray(),
+            Headers = new[] { "Department", "Budget", "Actual", "Variance" },
+            Rows = byDept.Select(g => new[] { g.Dept, Fmt.Money(g.Budget), Fmt.Money(g.Actual), Fmt.Money(g.Budget - g.Actual) }).ToList()
+        });
+    }
+
+    private async Task ShowByCategory()
+    {
+        var byCat = _all.GroupBy(b => b.Category)
+            .Select(g => new { Cat = g.Key, Budget = g.Sum(b => b.Budget), Actual = g.Sum(b => b.Actual) })
+            .OrderByDescending(g => g.Actual)
+            .ToList();
+        await Show(new ExecDrilldownDialog.Args
+        {
+            Title = "Spend by Category",
+            Subtitle = $"{Fmt.Money(_totalActual)} actual spend across {byCat.Count} categories.",
+            Kind = ExecDrilldownDialog.ChartKind.Doughnut,
+            DatasetLabel = "Actual ($)",
+            Labels = byCat.Select(g => g.Cat).ToArray(),
+            Data = byCat.Select(g => g.Actual).ToArray(),
+            Headers = new[] { "Category", "Budget", "Actual" },
+            Rows = byCat.Select(g => new[] { g.Cat, Fmt.Money(g.Budget), Fmt.Money(g.Actual) }).ToList()
+        });
+    }
+
+    private async Task ShowOverBudget()
+    {
+        var over = _all.Where(b => b.Variance < 0).OrderBy(b => b.Variance).ToList();
+        await Show(new ExecDrilldownDialog.Args
+        {
+            Title = "Lines Over Budget",
+            Subtitle = $"{over.Count} budget lines exceeded their budget by {Fmt.Money(over.Sum(b => -b.Variance))} in total.",
+            Kind = ExecDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "Overspend ($)",
+            Labels = over.Select(b => $"{b.Department} · {b.Category}").ToArray(),
+            Data = over.Select(b => -b.Variance).ToArray(),
+            Headers = new[] { "Department · Category", "Budget", "Actual", "Over by" },
+            Rows = over.Select(b => new[] { $"{b.Department} · {b.Category}", Fmt.Money(b.Budget), Fmt.Money(b.Actual), Fmt.Money(-b.Variance) }).ToList()
+        });
+    }
+
+    private async Task OpenLine(BudgetLine? line)
+    {
+        if (line is null) return;
+        var parameters = new DialogParameters
+        {
+            Title = $"{line.Department} · {line.Category}",
+            Width = "520px",
+            PrimaryAction = "Close",
+            SecondaryAction = null
+        };
+        await DialogService.ShowDialogAsync<BudgetLineDetailDialog>(line, parameters);
+    }
+
+    private async Task Export()
+    {
+        var headers = new[] { "Department", "Category", "Budget", "Actual", "Variance", "Variance %" };
+        var rows = _all.Select(b => new[]
+        {
+            b.Department,
+            b.Category,
+            b.Budget.ToString("0.##"),
+            b.Actual.ToString("0.##"),
+            b.Variance.ToString("0.##"),
+            b.VariancePct.ToString("0.#")
+        });
+        var csv = Csv.Build(headers, rows);
+        await JS.InvokeVoidAsync("afcDownload", "budget-vs-actual.csv", csv);
+    }
+}

@@ -23,7 +23,7 @@ public class AppData
         try
         {
             var saved = await _storage.GetAsync<DemoData>(StorageKey);
-            Data = saved is { Version: >= 2 } ? saved : SeedData.Build();
+            Data = saved is { Version: >= 3 } ? saved : SeedData.Build();
         }
         catch
         {

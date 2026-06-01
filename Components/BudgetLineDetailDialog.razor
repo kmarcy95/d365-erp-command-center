@@ -12,10 +12,63 @@
         <tbody>
             <tr><td>Budget</td><td class="num">@Fmt.Money(Content.Budget)</td></tr>
             <tr><td>Actual</td><td class="num">@Fmt.Money(Content.Actual)</td></tr>
-            <tr><td>Variance</td><td class="num">@Fmt.Money(Content.Variance)</td></tr>
-            <tr class="total"><td>Variance %</td><td class="num">@Fmt.Pct(Content.VariancePct)</td></tr>
+            <tr><td>Variance</td><td class="num"><span class="@(OverBudget ? "var-neg" : "var-pos")">@Fmt.Signed(Content.Variance)</span></td></tr>
+            <tr class="total"><td>Variance %</td><td class="num">@Fmt.SignedPct(Content.VariancePct)</td></tr>
         </tbody>
     </table>
+
+    @if (Content.Transactions.Count > 0)
+    {
+        <p class="dlg-sub" style="margin-top:1rem">
+            @if (OverBudget)
+            {
+                <text><strong>@Fmt.Money(-Content.Variance) over budget.</strong> The actual is made up of @Content.Transactions.Count posted transactions; the largest driver was <strong>@_top.Payee</strong> (@Fmt.Money(_top.Amount), @_top.Reference).</text>
+            }
+            else
+            {
+                <text><strong>@Fmt.Money(Content.Variance) under budget.</strong> The actual is made up of @Content.Transactions.Count posted transactions, largest being <strong>@_top.Payee</strong> (@Fmt.Money(_top.Amount)).</text>
+            }
+        </p>
+
+        <h4 class="dlg-section">Spend by transaction type</h4>
+        <table class="afc-table dlg-table">
+            <thead><tr><th>Type</th><th class="num">Count</th><th class="num">Amount</th><th class="num">% of actual</th></tr></thead>
+            <tbody>
+                @foreach (var g in _byType)
+                {
+                    <tr>
+                        <td>@g.Type</td>
+                        <td class="num">@g.Count</td>
+                        <td class="num">@Fmt.Money(g.Amount)</td>
+                        <td class="num">@Fmt.Pct(Content.Actual == 0 ? 0 : g.Amount / Content.Actual * 100)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <h4 class="dlg-section">Transactions behind the actual (@Content.Transactions.Count)</h4>
+        <table class="afc-table dlg-table">
+            <thead>
+                <tr><th>Date</th><th>Reference</th><th>Type</th><th>Payee</th><th class="num">Amount</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var t in Content.Transactions)
+                {
+                    <tr>
+                        <td>@t.Date.ToString("MMM d")</td>
+                        <td>@t.Reference</td>
+                        <td>@t.Type</td>
+                        <td>@t.Payee</td>
+                        <td class="num">@Fmt.Money(t.Amount)</td>
+                    </tr>
+                }
+                <tr class="total">
+                    <td colspan="4">Total actual</td>
+                    <td class="num">@Fmt.Money(Content.Transactions.Sum(t => t.Amount))</td>
+                </tr>
+            </tbody>
+        </table>
+    }
 </div>
 
 @code {
@@ -25,4 +78,19 @@
     private bool OverBudget => Content.Variance < 0;
     private string StatusText => OverBudget ? "Over budget" : "Under budget";
     private string StatusKind => OverBudget ? "bad" : "good";
+
+    private BudgetTxn _top = new();
+    private List<(string Type, int Count, decimal Amount)> _byType = new();
+
+    protected override void OnParametersSet()
+    {
+        _top = Content.Transactions.Count > 0
+            ? Content.Transactions.OrderByDescending(t => t.Amount).First()
+            : new BudgetTxn();
+        _byType = Content.Transactions
+            .GroupBy(t => t.Type)
+            .Select(g => (Type: g.Key, Count: g.Count(), Amount: g.Sum(t => t.Amount)))
+            .OrderByDescending(g => g.Amount)
+            .ToList();
+    }
 }

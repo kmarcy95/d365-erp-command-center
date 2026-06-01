@@ -104,6 +104,20 @@ public class BudgetLine
     public decimal Actual { get; set; }
     public decimal Variance => Budget - Actual;
     public decimal VariancePct => Budget == 0 ? 0 : Math.Round((Budget - Actual) / Budget * 100, 1);
+
+    /// <summary>The posted transactions that make up <see cref="Actual"/> (sums to Actual).</summary>
+    public List<BudgetTxn> Transactions { get; set; } = new();
+}
+
+/// <summary>An individual posting that contributes to a budget line's actual spend.</summary>
+public class BudgetTxn
+{
+    public DateOnly Date { get; set; }
+    public string Reference { get; set; } = "";   // INV-/PAY-/EXP-/SUB-/UTL-/CAP-####
+    public string Type { get; set; } = "";         // Vendor invoice, Payroll run, Expense report, …
+    public string Payee { get; set; } = "";
+    public string Description { get; set; } = "";
+    public decimal Amount { get; set; }
 }
 
 // ---------- Supply Chain ----------

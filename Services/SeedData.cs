@@ -323,14 +323,60 @@ public static class SeedData
             {
                 if (Rng.NextDouble() < 0.25) continue; // not every dept has every category
                 var budget = Money(40000, 900000);
-                d.Budget.Add(new BudgetLine
+                var actual = Math.Round(budget * (decimal)(0.78 + Rng.NextDouble() * 0.4), 2);
+                var line = new BudgetLine
                 {
                     Department = dept,
                     Category = cat,
                     Budget = budget,
-                    Actual = Math.Round(budget * (decimal)(0.78 + Rng.NextDouble() * 0.4), 2)
-                });
+                    Actual = actual,
+                    Transactions = BuildBudgetTxns(dept, cat, actual)
+                };
+                d.Budget.Add(line);
             }
+    }
+
+    // Category-specific transaction "shapes" so a drill-down reads like real subledger detail.
+    private static readonly Dictionary<string, (string Type, string RefPrefix, string Desc, string[] Payees)> TxnShape = new()
+    {
+        ["Salaries"]  = ("Payroll run", "PAY", "Bi-weekly payroll & benefits", new[] { "Payroll — Hourly", "Payroll — Salaried", "Benefits true-up", "Overtime & shift premium" }),
+        ["Materials"] = ("Vendor invoice", "INV", "Raw material purchase", new[] { "Lone Star Grain Mills", "Hill Country Dairy", "Pecan Valley Sweeteners", "Brazos Oils & Fats", "Coastal Bend Seasonings", "Medina Flour Co." }),
+        ["Equipment"] = ("Capital purchase", "CAP", "Equipment & tooling", new[] { "Permian Equipment Co.", "Cibolo Steel Fabrication", "Caldwell Tooling", "Big Bend Maintenance" }),
+        ["Travel"]    = ("Expense report", "EXP", "Travel & entertainment", new[] { "Expense report — K. Marcy", "Expense report — S. Patel", "Expense report — T. Okafor", "Expense report — M. Reyna" }),
+        ["Software"]  = ("Subscription", "SUB", "SaaS / license renewal", new[] { "San Marcos Software LLC", "Microsoft 365", "Adobe Creative Cloud", "Dynamics 365 licensing" }),
+        ["Utilities"] = ("Utility bill", "UTL", "Monthly utilities", new[] { "Pioneer Energy Partners", "Guadalupe Water Systems", "Trinity Sanitation Services" }),
+    };
+
+    private static List<BudgetTxn> BuildBudgetTxns(string dept, string cat, decimal actual)
+    {
+        var shape = TxnShape.TryGetValue(cat, out var s) ? s
+            : (Type: "Journal posting", RefPrefix: "JE", Desc: "Posted expense", Payees: new[] { "General ledger" });
+
+        int n = Rng.Next(4, 9);
+        // Random positive weights → amounts that sum exactly to actual (last absorbs rounding).
+        var weights = Enumerable.Range(0, n).Select(_ => Rng.NextDouble() + 0.15).ToArray();
+        double wsum = weights.Sum();
+
+        var txns = new List<BudgetTxn>();
+        decimal running = 0m;
+        for (int i = 0; i < n; i++)
+        {
+            decimal amt = i == n - 1
+                ? Math.Round(actual - running, 2)
+                : Math.Round(actual * (decimal)(weights[i] / wsum), 2);
+            running += amt;
+            var payee = shape.Payees[Rng.Next(shape.Payees.Length)];
+            txns.Add(new BudgetTxn
+            {
+                Date = AsOf.AddDays(-Rng.Next(2, 150)),
+                Reference = $"{shape.RefPrefix}-{Rng.Next(10000, 99999)}",
+                Type = shape.Type,
+                Payee = payee,
+                Description = $"{shape.Desc} · {dept}",
+                Amount = amt
+            });
+        }
+        return txns.OrderByDescending(t => t.Amount).ToList();
     }
 
     // ---------------- GL derived from subledgers ----------------

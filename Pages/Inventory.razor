@@ -1,6 +1,7 @@
 @page "/inventory"
 @inject AppData AppData
 @inject IJSRuntime JS
+@inject IDialogService DialogService
 <PageTitle>Inventory · D365 ERP Command Center</PageTitle>
 
 <div class="page-header">
@@ -18,10 +19,14 @@
 else
 {
     <div class="kpi-grid">
-        <KpiCard Label="Inventory Value" Value="@Fmt.Money(_totalValue)" Sub="On-hand × unit cost" />
-        <KpiCard Label="SKUs" Value="@Fmt.Num(_all.Count)" Sub="Distinct items" />
-        <KpiCard Label="Below Reorder" Value="@Fmt.Num(_belowReorder)" Sub="Need replenishment" Positive="false" />
-        <KpiCard Label="Warehouses" Value="@Fmt.Num(_warehouseCount)" Sub="Stocking locations" />
+        <KpiCard Label="Inventory Value" Value="@Fmt.Money(_totalValue)" Sub="On-hand × unit cost"
+                 Clickable="true" OnClick="ShowValueByCategory" />
+        <KpiCard Label="SKUs" Value="@Fmt.Num(_all.Count)" Sub="Distinct items"
+                 Clickable="true" OnClick="ShowSkuMix" />
+        <KpiCard Label="Below Reorder" Value="@Fmt.Num(_belowReorder)" Sub="Need replenishment" Positive="false"
+                 Clickable="true" OnClick="ShowBelowReorder" />
+        <KpiCard Label="Warehouses" Value="@Fmt.Num(_warehouseCount)" Sub="Stocking locations"
+                 Clickable="true" OnClick="ShowByWarehouse" />
     </div>
 
     <div class="chart-grid">
@@ -30,8 +35,11 @@ else
 
     <FluentSearch @bind-Value="_search" @bind-Value:after="Apply" Placeholder="Search name or SKU…" Class="afc-search" />
 
+    <p class="grid-hint">Click any row for the item’s stock position and unit economics.</p>
     <div class="grid-wrap">
-        <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="InventoryItem">
+        <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="InventoryItem"
+                        OnRowClick="@(async (FluentDataGridRow<InventoryItem> row) => await OpenItem(row.Item))"
+                        RowClass="@(_ => "grid-row-clickable")">
             <PropertyColumn Property="@(i => i.Sku)" Title="Sku" Sortable="true" />
             <PropertyColumn Property="@(i => i.Name)" Title="Name" Sortable="true" />
             <PropertyColumn Property="@(i => i.Category)" Title="Category" Sortable="true" />
@@ -99,6 +107,106 @@ else
                 i.Sku.Contains(s, StringComparison.OrdinalIgnoreCase));
         }
         _filtered = q.AsQueryable();
+    }
+
+    // ---------------- Drill-down dialogs ----------------
+
+    private async Task ShowDrilldown(InventoryDrilldownDialog.Args args)
+    {
+        var parameters = new DialogParameters
+        {
+            Title = args.Title,
+            Width = "780px",
+            PrimaryAction = "Close",
+            SecondaryAction = null
+        };
+        await DialogService.ShowDialogAsync<InventoryDrilldownDialog>(args, parameters);
+    }
+
+    private async Task ShowValueByCategory()
+    {
+        var groups = _all.GroupBy(i => i.Category)
+            .Select(g => new { Category = g.Key, Value = g.Sum(i => i.Value) })
+            .OrderByDescending(g => g.Value)
+            .ToList();
+        await ShowDrilldown(new InventoryDrilldownDialog.Args
+        {
+            Title = "Inventory Value by Category",
+            Subtitle = $"{Fmt.Money(_totalValue)} on hand across {_all.Count} SKUs.",
+            Items = _all,
+            Kind = InventoryDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "Value ($)",
+            Labels = groups.Select(g => g.Category).ToArray(),
+            Data = groups.Select(g => g.Value).ToArray(),
+            MoneyAxis = true
+        });
+    }
+
+    private async Task ShowSkuMix()
+    {
+        var groups = _all.GroupBy(i => i.Category)
+            .OrderByDescending(g => g.Count())
+            .ToList();
+        await ShowDrilldown(new InventoryDrilldownDialog.Args
+        {
+            Title = "SKU Mix by Category",
+            Subtitle = $"{_all.Count} distinct SKUs across {groups.Count} categories.",
+            Items = _all,
+            Kind = InventoryDrilldownDialog.ChartKind.Doughnut,
+            DatasetLabel = "SKUs",
+            Labels = groups.Select(g => g.Key).ToArray(),
+            Data = groups.Select(g => (decimal)g.Count()).ToArray()
+        });
+    }
+
+    private async Task ShowBelowReorder()
+    {
+        var items = _all.Where(i => i.BelowReorder).ToList();
+        var groups = items.GroupBy(i => i.Category)
+            .OrderByDescending(g => g.Count())
+            .ToList();
+        await ShowDrilldown(new InventoryDrilldownDialog.Args
+        {
+            Title = "Items Below Reorder Point",
+            Subtitle = $"{items.Count} SKUs need replenishment, by category.",
+            Items = items,
+            Kind = InventoryDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "SKUs below reorder",
+            Labels = groups.Select(g => g.Key).ToArray(),
+            Data = groups.Select(g => (decimal)g.Count()).ToArray()
+        });
+    }
+
+    private async Task ShowByWarehouse()
+    {
+        var groups = _all.GroupBy(i => i.WarehouseCode)
+            .Select(g => new { Warehouse = g.Key, Value = g.Sum(i => i.Value) })
+            .OrderByDescending(g => g.Value)
+            .ToList();
+        await ShowDrilldown(new InventoryDrilldownDialog.Args
+        {
+            Title = "Inventory Value by Warehouse",
+            Subtitle = $"{_warehouseCount} stocking locations holding {Fmt.Money(_totalValue)}.",
+            Items = _all,
+            Kind = InventoryDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "Value ($)",
+            Labels = groups.Select(g => g.Warehouse).ToArray(),
+            Data = groups.Select(g => g.Value).ToArray(),
+            MoneyAxis = true
+        });
+    }
+
+    private async Task OpenItem(InventoryItem? item)
+    {
+        if (item is null) return;
+        var parameters = new DialogParameters
+        {
+            Title = $"{item.Sku} · {item.Name}",
+            Width = "560px",
+            PrimaryAction = "Close",
+            SecondaryAction = null
+        };
+        await DialogService.ShowDialogAsync<InventoryItemDetailDialog>(item, parameters);
     }
 
     private async Task Export()

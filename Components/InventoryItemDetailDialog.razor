@@ -1,0 +1,42 @@
+@implements IDialogContentComponent<InventoryItem>
+
+<div class="dlg-content">
+    <div class="dlg-facts">
+        <div><span class="dlg-fact-label">SKU</span><span>@Content.Sku</span></div>
+        <div><span class="dlg-fact-label">Name</span><span>@Content.Name</span></div>
+        <div><span class="dlg-fact-label">Category</span><span>@Content.Category</span></div>
+        <div><span class="dlg-fact-label">Warehouse</span><span>@Content.WarehouseCode</span></div>
+        <div><span class="dlg-fact-label">Stock</span><span><StatusBadge Text="@(Content.BelowReorder ? "Below reorder" : "OK")" Kind="@(Content.BelowReorder ? "bad" : "good")" /></span></div>
+    </div>
+
+    <h4 class="dlg-section">Stock Position</h4>
+    <table class="afc-table dlg-table">
+        <tbody>
+            <tr><td>On hand</td><td class="num">@Fmt.Num(Content.OnHand)</td></tr>
+            <tr><td>Reorder point</td><td class="num">@Fmt.Num(Content.ReorderPoint)</td></tr>
+            <tr><td>Cover vs. reorder</td><td class="num">@CoverText</td></tr>
+        </tbody>
+    </table>
+
+    <h4 class="dlg-section">Unit Economics</h4>
+    <table class="afc-table dlg-table">
+        <tbody>
+            <tr><td>Unit cost</td><td class="num">@Fmt.Money1(Content.UnitCost)</td></tr>
+            <tr><td>Unit price</td><td class="num">@Fmt.Money1(Content.UnitPrice)</td></tr>
+            <tr><td>Unit margin</td><td class="num">@Fmt.Money1(Content.UnitPrice - Content.UnitCost) (@MarginPctText)</td></tr>
+            <tr class="total"><td>On-hand value (cost)</td><td class="num">@Fmt.Money(Content.Value)</td></tr>
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter] public InventoryItem Content { get; set; } = default!;
+
+    private string CoverText => Content.ReorderPoint > 0
+        ? (Content.OnHand / (double)Content.ReorderPoint).ToString("0.0") + "×"
+        : "—";
+
+    private string MarginPctText => Content.UnitPrice > 0
+        ? ((Content.UnitPrice - Content.UnitCost) / Content.UnitPrice).ToString("P0", System.Globalization.CultureInfo.InvariantCulture)
+        : "—";
+}

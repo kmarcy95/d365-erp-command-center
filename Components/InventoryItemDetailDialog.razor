@@ -23,6 +23,10 @@
         <span>│ Days of supply <strong>@(Content.DaysOfSupply >= 999 ? "∞" : Content.DaysOfSupply.ToString("0"))</strong></span>
     </div>
 
+    <h4 class="dlg-section">On-hand trend <span class="dlg-sub">(12 months, illustrative)</span></h4>
+    <Chart Type="line" Labels="@_trendLabels" Series="@_trendSeries"
+           Hint="On-hand units vs reorder point — when the line dips below the reorder reference, replenishment is due." />
+
     <div class="reco">
         @if (Content.SuggestedReorderQty > 0)
         {
@@ -70,6 +74,40 @@
 
 @code {
     [Parameter] public InventoryItem Content { get; set; } = default!;
+
+    private string[] _trendLabels = Array.Empty<string>();
+    private List<ChartSeries> _trendSeries = new();
+
+    protected override void OnInitialized()
+    {
+        // Deterministic per-SKU on-hand history ending at the current level (stable across runs).
+        int seed = 0;
+        foreach (var ch in Content.Sku) seed = seed * 31 + ch;
+        var rnd = new Random(seed);
+
+        // Older months drift opposite to the current state: excess built up, low/critical drew down.
+        double drift = Content.State == StockState.Excess ? -0.05
+            : Content.State is StockState.Low or StockState.Critical or StockState.Stockout ? 0.06 : 0.0;
+
+        double cur = Math.Max(0, Content.OnHand);
+        var onHand = new double[12];
+        var labels = new string[12];
+        var start = new DateOnly(Content.LastCount.Year, Content.LastCount.Month, 1).AddMonths(-11);
+        for (int m = 11; m >= 0; m--)
+        {
+            labels[11 - m] = start.AddMonths(11 - m).ToString("MMM");
+            double v = m == 0 ? cur : cur * (1 + drift * m) * (1 + (rnd.NextDouble() - 0.5) * 0.14);
+            onHand[11 - m] = Math.Round(Math.Max(0, v));
+        }
+
+        var reorder = Enumerable.Repeat((double)Content.ReorderPoint, 12).ToArray();
+        _trendLabels = labels;
+        _trendSeries = new List<ChartSeries>
+        {
+            new ChartSeries("On hand", onHand, "#0f6cbd"),
+            new ChartSeries("Reorder point", reorder, "#d9a400")
+        };
+    }
 
     private string StateKind => Content.State switch
     {

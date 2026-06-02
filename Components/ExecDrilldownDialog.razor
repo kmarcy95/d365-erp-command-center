@@ -9,6 +9,11 @@
         <canvas id="@_canvasId"></canvas>
     </div>
 
+    <h4 class="dlg-section">12-month trend <span class="dlg-sub">(illustrative)</span></h4>
+    <div class="chart-canvas-wrap">
+        <canvas id="@_trendId"></canvas>
+    </div>
+
     @if (Content.Headers.Length > 0)
     {
         <table class="afc-table dlg-table">
@@ -39,6 +44,7 @@
     [Parameter] public Args Content { get; set; } = default!;
 
     private readonly string _canvasId = "exec-chart-" + Guid.NewGuid().ToString("N");
+    private readonly string _trendId = "exec-trend-" + Guid.NewGuid().ToString("N");
     private bool _rendered;
 
     public enum ChartKind { Bar, Doughnut }
@@ -53,6 +59,10 @@
         public decimal[] Data { get; set; } = Array.Empty<decimal>();
         public string[] Headers { get; set; } = Array.Empty<string>();
         public List<string[]> Rows { get; set; } = new();
+
+        /// <summary>Optional explicit 12-pt trend; if empty, one is synthesized from the headline total.</summary>
+        public string[] TrendLabels { get; set; } = Array.Empty<string>();
+        public decimal[] TrendData { get; set; } = Array.Empty<decimal>();
     }
 
     private static readonly string[] Palette =
@@ -106,11 +116,64 @@
         };
 
         await JS.InvokeVoidAsync("afcCharts.render", _canvasId, config);
+
+        // ---- 12-month trend (explicit if supplied, else synthesized from the headline) ----
+        var (trendLabels, trendData) = BuildTrend();
+        object trendConfig = new
+        {
+            type = "line",
+            data = new
+            {
+                labels = trendLabels,
+                datasets = new[]
+                {
+                    new { label = Content.DatasetLabel, data = trendData, borderColor = "#0f6cbd",
+                          backgroundColor = "#0f6cbd", borderWidth = 2, fill = false, tension = 0.3 }
+                }
+            },
+            options = new
+            {
+                responsive = true,
+                maintainAspectRatio = false,
+                plugins = new { legend = new { display = false, position = "bottom" } },
+                scales = new { y = new { beginAtZero = false } }
+            }
+        };
+        await JS.InvokeVoidAsync("afcCharts.render", _trendId, trendConfig);
+    }
+
+    private (string[] labels, double[] data) BuildTrend()
+    {
+        if (Content.TrendData.Length > 0)
+            return (Content.TrendLabels, Content.TrendData.Select(v => (double)v).ToArray());
+
+        // Synthesize a deterministic 12-month series ending at the headline total.
+        double end = (double)Content.Data.Sum();
+        if (end == 0) end = Content.Data.Length > 0 ? (double)Content.Data.Max() : 100;
+        int seed = 0;
+        foreach (var ch in Content.Title) seed = seed * 31 + ch;
+        var rnd = new Random(seed);
+        double drift = (rnd.NextDouble() - 0.45) * 0.10;   // gentle up/down bias per metric
+
+        var labels = new string[12];
+        var data = new double[12];
+        var start = DateTime.Now.AddMonths(-11);
+        for (int m = 11; m >= 0; m--)
+        {
+            labels[11 - m] = start.AddMonths(11 - m).ToString("MMM");
+            data[11 - m] = m == 0 ? Math.Round(end, 2)
+                : Math.Round(end * (1 - drift * m) * (1 + (rnd.NextDouble() - 0.5) * 0.10), 2);
+        }
+        return (labels, data);
     }
 
     public async ValueTask DisposeAsync()
     {
-        try { await JS.InvokeVoidAsync("afcCharts.destroy", _canvasId); }
+        try
+        {
+            await JS.InvokeVoidAsync("afcCharts.destroy", _canvasId);
+            await JS.InvokeVoidAsync("afcCharts.destroy", _trendId);
+        }
         catch { /* JS runtime may already be gone on teardown */ }
     }
 }

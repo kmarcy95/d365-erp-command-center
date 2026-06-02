@@ -3,7 +3,7 @@ namespace D365CommandCenter.Services;
 /// <summary>Static app/release metadata surfaced in the footer and meta strips.</summary>
 public static class AppInfo
 {
-    public const string Version = "3.3.0";
+    public const string Version = "3.4.0";
     public const string Build = "2026.06.01";
     public const string BaseCurrency = "USD";
     public const string FiscalCalendar = "Calendar FY (Jan–Dec)";

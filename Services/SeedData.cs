@@ -24,6 +24,7 @@ public static class SeedData
         BuildVendors(d);
         BuildCustomers(d);
         BuildInventory(d);
+        BuildReserve(d);
         BuildApInvoices(d);
         BuildArInvoices(d);
         BuildPurchaseOrders(d);
@@ -161,6 +162,27 @@ public static class SeedData
                 // Spread on-hand so we get stockouts, lows, healthy and excess across the catalog.
                 int onHand = (int)Math.Round(reorder * (0.0 + Rng.NextDouble() * 4.2));
 
+                // Stock age (days since last replenishment) drives the E&O reserve. Most stock is
+                // fresh; a tail ages out. Low-stock items were just replenished (fresh); high-cover
+                // slow movers skew older, producing a realistic obsolete (181+) tail.
+                int ageDays;
+                if (onHand < safety)
+                {
+                    ageDays = Rng.Next(0, 30);
+                }
+                else
+                {
+                    double cover = usage <= 0 ? 999 : onHand / usage;
+                    double r = Rng.NextDouble();
+                    if (cover > 70) r = Math.Min(1.0, r + 0.35);   // slow movers skew older
+                    ageDays =
+                        r < 0.42 ? Rng.Next(0, 31) :
+                        r < 0.64 ? Rng.Next(31, 61) :
+                        r < 0.80 ? Rng.Next(61, 91) :
+                        r < 0.92 ? Rng.Next(91, 181) :
+                        Rng.Next(181, 420);
+                }
+
                 d.Inventory.Add(new InventoryItem
                 {
                     Sku = $"FG{4000 + n}",
@@ -174,10 +196,62 @@ public static class SeedData
                     AvgDailyUsage = usage,
                     LeadTimeDays = lead,
                     SafetyStock = safety,
-                    LastCount = AsOf.AddDays(-Rng.Next(1, 95))
+                    LastCount = AsOf.AddDays(-Rng.Next(1, 95)),
+                    LastReceiptDate = AsOf.AddDays(-ageDays)
                 });
                 n++;
             }
+        }
+    }
+
+    private static void BuildReserve(DemoData d)
+    {
+        d.ReservePolicy = ReservePolicy.Default();
+        var bands = d.ReservePolicy.Bands;
+        int nb = bands.Count;
+
+        // Current aging mix + reserve, computed from the live inventory.
+        var curBuckets = new decimal[nb];
+        foreach (var it in d.Inventory)
+        {
+            int age = AsOf.DayNumber - it.LastReceiptDate.DayNumber;
+            int bi = bands.FindIndex(b => b.Contains(age));
+            if (bi < 0) bi = nb - 1;
+            curBuckets[bi] += it.Value;
+        }
+        decimal curOnHand = curBuckets.Sum();
+        decimal curReserve = 0m;
+        for (int i = 0; i < nb; i++) curReserve += curBuckets[i] * bands[i].RatePct / 100m;
+        decimal curEandO = curOnHand == 0 ? 0 : curReserve / curOnHand;
+        decimal annualUsage = d.Inventory.Sum(i => i.AnnualUsageValue);
+        double curTurns = curOnHand <= 0 ? 0 : (double)(annualUsage / curOnHand);
+
+        // 12 monthly snapshots, oldest → newest. On-hand grows ~90%→100% of current and the
+        // E&O ratio climbs ~70%→100% of current, so the reserve trend shows aging accumulating.
+        for (int m = 11; m >= 0; m--)
+        {
+            double recency = (11 - m) / 11.0;                 // 0 oldest → 1 newest
+            double wobble = 1 + 0.015 * Math.Sin(m * 1.3);
+            decimal onHandM = m == 0 ? curOnHand
+                : Math.Round(curOnHand * (decimal)((0.90 + 0.10 * recency) * wobble), 0);
+            decimal eandoM = m == 0 ? curEandO
+                : Math.Round(curEandO * (decimal)(0.70 + 0.30 * recency), 4);
+            decimal reserveM = m == 0 ? curReserve : Math.Round(onHandM * eandoM, 0);
+
+            // Distribute on-hand across buckets proportional to the current mix (scaled to onHandM).
+            var bucketsM = new decimal[nb];
+            if (curOnHand > 0)
+                for (int i = 0; i < nb; i++)
+                    bucketsM[i] = m == 0 ? curBuckets[i] : Math.Round(curBuckets[i] / curOnHand * onHandM, 0);
+
+            d.InventorySnapshots.Add(new InventorySnapshot
+            {
+                AsOf = new DateOnly(AsOf.Year, AsOf.Month, 1).AddMonths(-m),
+                OnHandValue = onHandM,
+                ReserveValue = reserveM,
+                Turns = Math.Round(curTurns * (0.95 + 0.10 * recency), 2),
+                BucketValues = bucketsM
+            });
         }
     }
 

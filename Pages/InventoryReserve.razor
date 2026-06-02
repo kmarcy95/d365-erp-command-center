@@ -1,0 +1,466 @@
+@page "/inventory/reserve"
+@inject AppData AppData
+@inject UiState Ui
+@inject IJSRuntime JS
+@inject IDialogService DialogService
+<PageTitle>Inventory Reserve &amp; Aging · D365 ERP Command Center</PageTitle>
+
+<div class="print-only print-header">
+    <div class="ph-co">Alamo Foods Co.</div>
+    <div class="ph-report">Inventory Reserve &amp; Aging — excess &amp; obsolete provision</div>
+    <div class="ph-meta">
+        As of @AppData.Data.AsOf.ToString("MMM d, yyyy") · Currency @AppInfo.BaseCurrency ·
+        Environment @Ui.EnvName · Generated @DateTime.Now.ToString("MMM d, yyyy h:mm tt")
+    </div>
+</div>
+
+<div class="page-header">
+    <div>
+        <h1>Inventory Reserve &amp; Aging</h1>
+        <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">Data Analyst</FluentBadge>
+    </div>
+    <div style="display:flex;gap:.5rem;align-items:center">
+        <div class="scale-toggle" role="group" aria-label="Display units">
+            <button class="@(_scale == MoneyScale.Units ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Units)">$</button>
+            <button class="@(_scale == MoneyScale.Thousands ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Thousands)">$K</button>
+            <button class="@(_scale == MoneyScale.Millions ? "is-active" : "")" @onclick="@(() => _scale = MoneyScale.Millions)">$M</button>
+        </div>
+        <FluentButton Appearance="Appearance.Stealth" OnClick="Print">🖨 Print / PDF</FluentButton>
+        <FluentButton Appearance="Appearance.Accent" OnClick="Export">⬇ Export CSV</FluentButton>
+    </div>
+</div>
+
+<PageMeta AsOf="@AppData.Data.AsOf" GeneratedAtUtc="@AppData.Data.GeneratedAtUtc" Module="Inventory · Reserve" />
+
+<InventorySubnav Active="reserve" />
+
+@if (_error)
+{
+    <ErrorBanner Message="Couldn't load the reserve analysis. Use the account menu in the header to reset the demo data." />
+}
+else if (!_ready)
+{
+    <Skeleton Variant="page" />
+}
+else
+{
+    <div class="kpi-grid">
+        <KpiCard Label="On-Hand Value" Value="@Fmt.Money(_onHand, _scale)" Sub="@($"{_items.Count} SKUs at cost")"
+                 Clickable="true" OnClick="ShowByCategory" />
+        <KpiCard Label="E&O Reserve" Value="@Fmt.Money(_reserve, _scale)" Sub="Provision for slow/obsolete" Positive="false"
+                 Clickable="true" OnClick="ShowReserveByCategory" />
+        <KpiCard Label="Reserve Rate" Value="@Fmt.Pct(_eandoPct)" Sub="Reserve ÷ on-hand value" Positive="@(_eandoPct < 8)"
+                 Clickable="true" OnClick="ShowByBucket" />
+        <KpiCard Label="181+ Days" Value="@Fmt.Money(_obsoleteValue, _scale)" Sub="@($"{_obsoleteCount} SKUs fully reserved")" Positive="false"
+                 Clickable="true" OnClick="ShowObsolete" />
+        <KpiCard Label="Net Realizable" Value="@Fmt.Money(_netValue, _scale)" Sub="On-hand less reserve"
+                 Clickable="true" OnClick="ShowByCategory" />
+    </div>
+
+    <FluentCard Class="policy-card">
+        <div class="policy-head">
+            <div>
+                <h3>Reserve policy</h3>
+                <span class="dlg-sub">Reserve rate applied to on-hand value by stock age. Edit a rate to re-provision live.</span>
+            </div>
+            <button class="fb-reset" @onclick="ResetPolicy">Reset to default</button>
+        </div>
+        <div class="policy-bands">
+            @foreach (var band in _policy.Bands)
+            {
+                <div class="policy-band">
+                    <label>@band.Label</label>
+                    <div class="policy-rate">
+                        <input type="number" min="0" max="100" step="1" value="@band.RatePct"
+                               @onchange="@(e => OnRateChanged(band, e.Value?.ToString()))" />
+                        <span>%</span>
+                    </div>
+                    <div class="policy-amt">@Fmt.Money(_bucketReserve[_policy.Bands.IndexOf(band)], _scale) reserved</div>
+                </div>
+            }
+        </div>
+    </FluentCard>
+
+    <div class="chart-grid">
+        <Chart Title="On-hand value by age bucket ($)" Type="bar" Labels="@_bucketLabels" Series="@_bucketSeries" Stacked="true"
+               Hint="Net value vs reserve · click a bucket to filter the table" OnLabelClick="OnBucketPick" />
+        <Chart Title="Reserve trend (12 months, $)" Type="line" Labels="@_trendLabels" Series="@_reserveTrend"
+               Hint="E&O provision over time" />
+        <Chart Title="Aging mix migration ($ by month)" Type="bar" Labels="@_trendLabels" Series="@_migrationSeries" Stacked="true" />
+    </div>
+
+    <h2>Smart Insights</h2>
+    <div class="insight-grid">
+        @foreach (var ins in _insights)
+        {
+            <div class="insight-card insight-@ins.Level.ToString().ToLower()">
+                <div class="insight-top">
+                    <span class="insight-badge">@ins.Level</span>
+                    @if (ins.Impact > 0)
+                    {
+                        <span class="insight-impact">@Fmt.Money(ins.Impact, _scale)</span>
+                    }
+                </div>
+                <h4>@ins.Title</h4>
+                <p>@ins.Detail</p>
+                <p class="insight-action">→ @ins.Action</p>
+            </div>
+        }
+    </div>
+
+    <h2>Aging detail</h2>
+    <div class="filter-bar">
+        <div class="filter-field">
+            <label>Category</label>
+            <select value="@_category" @onchange="@(e => { _category = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All categories</option>
+                @foreach (var c in _categories) { <option value="@c">@c</option> }
+            </select>
+        </div>
+        <div class="filter-field">
+            <label>Warehouse</label>
+            <select value="@_warehouse" @onchange="@(e => { _warehouse = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All warehouses</option>
+                @foreach (var w in _warehouses) { <option value="@w">@w</option> }
+            </select>
+        </div>
+        <div class="filter-field">
+            <label>Age bucket</label>
+            <select value="@_bucket" @onchange="@(e => { _bucket = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All buckets</option>
+                @foreach (var b in _policy.Bands) { <option value="@b.Label">@b.Label</option> }
+            </select>
+        </div>
+        <div class="filter-field">
+            <label>ABC class</label>
+            <select value="@_abc" @onchange="@(e => { _abc = e.Value?.ToString() ?? ""; Apply(); })">
+                <option value="">All classes</option>
+                <option value="A">A</option>
+                <option value="B">B</option>
+                <option value="C">C</option>
+            </select>
+        </div>
+        <div class="filter-field" style="flex:1 1 160px">
+            <label>Search</label>
+            <input value="@_search" @oninput="@(e => { _search = e.Value?.ToString() ?? ""; Apply(); })" placeholder="Name or SKU…" />
+        </div>
+        <button class="fb-reset" @onclick="ResetFilters">Reset filters</button>
+    </div>
+
+    <p class="grid-hint">@_filtered.Count of @_items.Count SKUs shown · click any row for stock position &amp; planning detail.</p>
+
+    @if (_filtered.Count == 0)
+    {
+        <div class="grid-wrap">
+            <EmptyState Emoji="📦" Title="No matching items"
+                        Message="No inventory items match the current filters. Try clearing a filter or resetting." />
+        </div>
+    }
+    else
+    {
+        <div class="grid-wrap">
+            <table class="afc-table">
+                <thead>
+                    <tr>
+                        <th>SKU</th>
+                        <th>Name</th>
+                        <th>Category</th>
+                        <th>ABC</th>
+                        <th class="num">Age (days)</th>
+                        <th>Bucket</th>
+                        <th class="num">On-hand ($)</th>
+                        <th class="num">Reserve %</th>
+                        <th class="num">Reserve ($)</th>
+                        <th class="num">Net ($)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var i in _filtered)
+                    {
+                        var age = Age(i);
+                        <tr class="grid-row-clickable @RowTint(age)" @onclick="@(() => OpenItem(i))">
+                            <td>@i.Sku</td>
+                            <td>@i.Name</td>
+                            <td>@i.Category</td>
+                            <td><span class="abc-chip abc-@i.AbcClass">@i.AbcClass</span></td>
+                            <td class="num">@age</td>
+                            <td>@Bucket(i)</td>
+                            <td class="num">@Fmt.Money(i.Value, _scale)</td>
+                            <td class="num">@ReserveCalc.RatePct(_policy, age)%</td>
+                            <td class="num">@Fmt.Money(Res(i), _scale)</td>
+                            <td class="num">@Fmt.Money(i.Value - Res(i), _scale)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@code {
+    private bool _ready;
+    private bool _error;
+    private MoneyScale _scale = MoneyScale.Units;
+    private string _category = "", _warehouse = "", _bucket = "", _abc = "", _search = "";
+
+    private List<InventoryItem> _items = new();
+    private List<InventoryItem> _filtered = new();
+    private ReservePolicy _policy = ReservePolicy.Default();
+    private IReadOnlyList<InventorySnapshot> _snaps = Array.Empty<InventorySnapshot>();
+    private DateOnly _asOf;
+
+    private decimal _onHand, _reserve, _netValue, _obsoleteValue, _eandoPct;
+    private int _obsoleteCount;
+    private decimal[] _bucketReserve = Array.Empty<decimal>();
+
+    private string[] _categories = Array.Empty<string>();
+    private string[] _warehouses = Array.Empty<string>();
+
+    private string[] _bucketLabels = Array.Empty<string>();
+    private List<ChartSeries> _bucketSeries = new();
+    private string[] _trendLabels = Array.Empty<string>();
+    private List<ChartSeries> _reserveTrend = new();
+    private List<ChartSeries> _migrationSeries = new();
+
+    private List<Insight> _insights = new();
+
+    private int Age(InventoryItem i) => ReserveCalc.Age(i, _asOf);
+    private string Bucket(InventoryItem i) => ReserveCalc.Band(_policy, Age(i)).Label;
+    private decimal Res(InventoryItem i) => ReserveCalc.Reserve(i, _policy, _asOf);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await AppData.InitializeAsync();
+            _items = AppData.Data.Inventory.ToList();
+            _policy = AppData.Data.ReservePolicy;
+            _snaps = AppData.Data.InventorySnapshots;
+            _asOf = AppData.Data.AsOf;
+
+            // ABC classification by annualised usage value (cumulative 80/95/100) — also used on Overview.
+            decimal totalUsage = _items.Sum(i => i.AnnualUsageValue);
+            decimal cum = 0m;
+            foreach (var i in _items.OrderByDescending(x => x.AnnualUsageValue))
+            {
+                cum += i.AnnualUsageValue;
+                var pct = totalUsage == 0 ? 0 : cum / totalUsage * 100;
+                i.AbcClass = pct <= 80 ? "A" : pct <= 95 ? "B" : "C";
+            }
+
+            _categories = _items.Select(i => i.Category).Distinct().OrderBy(x => x).ToArray();
+            _warehouses = _items.Select(i => i.WarehouseCode).Distinct().OrderBy(x => x).ToArray();
+
+            _trendLabels = _snaps.Select(s => s.AsOf.ToString("MMM")).ToArray();
+            _reserveTrend = new List<ChartSeries> { new ChartSeries("Reserve $", _snaps.Select(s => (double)s.ReserveValue).ToArray()) };
+
+            Recompute();
+            _ready = true;
+        }
+        catch
+        {
+            _error = true;
+        }
+    }
+
+    private void Recompute()
+    {
+        int nb = _policy.Bands.Count;
+        _bucketReserve = new decimal[nb];
+        var bucketValue = new decimal[nb];
+        foreach (var i in _items)
+        {
+            int bi = _policy.Bands.FindIndex(b => b.Contains(Age(i)));
+            if (bi < 0) bi = nb - 1;
+            bucketValue[bi] += i.Value;
+            _bucketReserve[bi] += Math.Round(i.Value * _policy.Bands[bi].RatePct / 100m, 2);
+        }
+
+        _onHand = _items.Sum(i => i.Value);
+        _reserve = _bucketReserve.Sum();
+        _netValue = _onHand - _reserve;
+        _eandoPct = _onHand == 0 ? 0 : Math.Round(_reserve / _onHand * 100, 1);
+        var topMin = _policy.Bands[^1].MinDays;
+        var obsolete = _items.Where(i => Age(i) >= topMin).ToList();
+        _obsoleteCount = obsolete.Count;
+        _obsoleteValue = obsolete.Sum(i => i.Value);
+
+        _bucketLabels = _policy.Bands.Select(b => b.Label).ToArray();
+        var net = new double[nb];
+        for (int k = 0; k < nb; k++) net[k] = (double)(bucketValue[k] - _bucketReserve[k]);
+        _bucketSeries = new List<ChartSeries>
+        {
+            new ChartSeries("Net value", net, "#0f6cbd"),
+            new ChartSeries("Reserve", _bucketReserve.Select(v => (double)v).ToArray(), "#d13438")
+        };
+
+        // Aging-mix migration: one stacked series per band across the snapshots.
+        _migrationSeries = new List<ChartSeries>();
+        for (int k = 0; k < nb; k++)
+        {
+            int idx = k;
+            _migrationSeries.Add(new ChartSeries(
+                _policy.Bands[k].Label,
+                _snaps.Select(s => idx < s.BucketValues.Length ? (double)s.BucketValues[idx] : 0).ToArray()));
+        }
+
+        _insights = ReserveCalc.Insights(_items, _policy, _snaps, _asOf);
+        Apply();
+    }
+
+    private async Task OnRateChanged(ReserveBand band, string? value)
+    {
+        if (int.TryParse(value, out var r))
+            band.RatePct = Math.Clamp(r, 0, 100);
+        Recompute();
+        await AppData.SaveAsync();
+    }
+
+    private async Task ResetPolicy()
+    {
+        var defaults = ReservePolicy.Default().Bands;
+        for (int i = 0; i < _policy.Bands.Count && i < defaults.Count; i++)
+            _policy.Bands[i].RatePct = defaults[i].RatePct;
+        Recompute();
+        await AppData.SaveAsync();
+    }
+
+    private void ResetFilters() { _category = _warehouse = _bucket = _abc = _search = ""; Apply(); }
+    private void OnBucketPick(string b) { _bucket = _bucket == b ? "" : b; Apply(); }
+
+    private void Apply()
+    {
+        var q = _items.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(_category)) q = q.Where(i => i.Category == _category);
+        if (!string.IsNullOrWhiteSpace(_warehouse)) q = q.Where(i => i.WarehouseCode == _warehouse);
+        if (!string.IsNullOrWhiteSpace(_bucket)) q = q.Where(i => Bucket(i) == _bucket);
+        if (!string.IsNullOrWhiteSpace(_abc)) q = q.Where(i => i.AbcClass == _abc);
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            var s = _search.Trim();
+            q = q.Where(i => i.Name.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                             i.Sku.Contains(s, StringComparison.OrdinalIgnoreCase));
+        }
+        _filtered = q.OrderByDescending(i => Age(i)).ToList();
+    }
+
+    private string RowTint(int age) =>
+        age >= _policy.Bands[^1].MinDays ? "var-row-bad" :
+        age >= 91 ? "var-row-warn" : "";
+
+    private async Task Print() => await JS.InvokeVoidAsync("afcPrint", "");
+
+    // ---------------- Drill-down dialogs ----------------
+
+    private async Task ShowDrill(InventoryDrilldownDialog.Args args)
+    {
+        var parameters = new DialogParameters
+        {
+            Title = "Reserve & Aging ▸ " + args.Title,
+            Width = "780px",
+            PrimaryAction = "Close",
+            SecondaryAction = null
+        };
+        await DialogService.ShowDialogAsync<InventoryDrilldownDialog>(args, parameters);
+    }
+
+    private async Task ShowByCategory()
+    {
+        var g = _items.GroupBy(i => i.Category)
+            .Select(x => new { Cat = x.Key, Value = x.Sum(i => i.Value) })
+            .OrderByDescending(x => x.Value).ToList();
+        await ShowDrill(new InventoryDrilldownDialog.Args
+        {
+            Title = "On-hand value by category",
+            Subtitle = $"{Fmt.Money(_onHand)} on hand · {Fmt.Money(_netValue)} net of reserve.",
+            Items = _items,
+            Kind = InventoryDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "Value ($)",
+            Labels = g.Select(x => x.Cat).ToArray(),
+            Data = g.Select(x => x.Value).ToArray(),
+            MoneyAxis = true
+        });
+    }
+
+    private async Task ShowReserveByCategory()
+    {
+        var g = _items.GroupBy(i => i.Category)
+            .Select(x => new { Cat = x.Key, Res = x.Sum(i => Res(i)) })
+            .OrderByDescending(x => x.Res).ToList();
+        await ShowDrill(new InventoryDrilldownDialog.Args
+        {
+            Title = "Reserve by category",
+            Subtitle = $"{Fmt.Money(_reserve)} total E&O reserve ({Fmt.Pct(_eandoPct)} of on-hand).",
+            Items = _items.Where(i => Res(i) > 0).OrderByDescending(i => Res(i)).ToList(),
+            Kind = InventoryDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "Reserve ($)",
+            Labels = g.Select(x => x.Cat).ToArray(),
+            Data = g.Select(x => x.Res).ToArray(),
+            MoneyAxis = true
+        });
+    }
+
+    private async Task ShowByBucket()
+    {
+        await ShowDrill(new InventoryDrilldownDialog.Args
+        {
+            Title = "Reserve by age bucket",
+            Subtitle = $"Reserve rate {Fmt.Pct(_eandoPct)} of on-hand value.",
+            Items = _items.OrderByDescending(i => Age(i)).ToList(),
+            Kind = InventoryDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "Reserve ($)",
+            Labels = _bucketLabels,
+            Data = _bucketReserve,
+            MoneyAxis = true
+        });
+    }
+
+    private async Task ShowObsolete()
+    {
+        var items = _items.Where(i => Age(i) >= _policy.Bands[^1].MinDays).OrderByDescending(i => i.Value).ToList();
+        var g = items.GroupBy(i => i.Category)
+            .Select(x => new { Cat = x.Key, Value = x.Sum(i => i.Value) })
+            .OrderByDescending(x => x.Value).ToList();
+        await ShowDrill(new InventoryDrilldownDialog.Args
+        {
+            Title = "Obsolete stock (181+ days)",
+            Subtitle = $"{items.Count} SKUs worth {Fmt.Money(_obsoleteValue)} are fully reserved — candidates for write-off.",
+            Items = items,
+            Kind = InventoryDrilldownDialog.ChartKind.Bar,
+            DatasetLabel = "Value ($)",
+            Labels = g.Select(x => x.Cat).ToArray(),
+            Data = g.Select(x => x.Value).ToArray(),
+            MoneyAxis = true
+        });
+    }
+
+    private async Task OpenItem(InventoryItem item)
+    {
+        var parameters = new DialogParameters
+        {
+            Title = $"Reserve & Aging ▸ {item.Sku} · {item.Name}",
+            Width = "640px",
+            PrimaryAction = "Close",
+            SecondaryAction = null
+        };
+        await DialogService.ShowDialogAsync<InventoryItemDetailDialog>(item, parameters);
+    }
+
+    private async Task Export()
+    {
+        var headers = new[] { "Sku", "Name", "Category", "Warehouse", "AbcClass", "AgeDays", "Bucket",
+            "OnHandValue", "ReserveRatePct", "ReserveAmount", "NetValue" };
+        var rows = _items.Select(i =>
+        {
+            int age = Age(i);
+            return new[]
+            {
+                i.Sku, i.Name, i.Category, i.WarehouseCode, i.AbcClass, age.ToString(),
+                Bucket(i), i.Value.ToString("0.##"), ReserveCalc.RatePct(_policy, age).ToString(),
+                Res(i).ToString("0.##"), (i.Value - Res(i)).ToString("0.##")
+            };
+        });
+        var csv = Csv.Build(headers, rows);
+        await JS.InvokeVoidAsync("afcDownload", "inventory-reserve.csv", csv);
+    }
+}

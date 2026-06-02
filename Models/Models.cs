@@ -147,6 +147,7 @@ public class InventoryItem
     public int LeadTimeDays { get; set; }            // replenishment lead time
     public int SafetyStock { get; set; }             // buffer below which stock is critical
     public DateOnly LastCount { get; set; }          // last physical/cycle count
+    public DateOnly LastReceiptDate { get; set; }    // when on-hand stock was last replenished — drives aging
 
     public string AbcClass { get; set; } = "";       // assigned by the page (value ranking)
 
@@ -171,6 +172,49 @@ public class InventoryItem
         OnHand < ReorderPoint ? StockState.Low :
         DaysOfSupply > 120 ? StockState.Excess :
         StockState.Healthy;
+}
+
+// ---------- Inventory: E&O reserve policy + history ----------
+
+/// <summary>One aging band in the excess-&-obsolete reserve matrix.</summary>
+public class ReserveBand
+{
+    public string Label { get; set; } = "";   // e.g. "91-180 days"
+    public int MinDays { get; set; }            // inclusive lower bound (age in days)
+    public int MaxDays { get; set; }            // inclusive upper bound (int.MaxValue for the open top band)
+    public int RatePct { get; set; }            // reserve rate applied to on-hand value in this band
+
+    public bool Contains(int ageDays) => ageDays >= MinDays && ageDays <= MaxDays;
+}
+
+/// <summary>The editable E&O provisioning matrix (reserve rate by stock age).</summary>
+public class ReservePolicy
+{
+    public List<ReserveBand> Bands { get; set; } = new();
+
+    /// <summary>Standard slow-moving / obsolete provisioning ladder.</summary>
+    public static ReservePolicy Default() => new()
+    {
+        Bands = new()
+        {
+            new() { Label = "0-30 days",   MinDays = 0,   MaxDays = 30,            RatePct = 0 },
+            new() { Label = "31-60 days",  MinDays = 31,  MaxDays = 60,            RatePct = 5 },
+            new() { Label = "61-90 days",  MinDays = 61,  MaxDays = 90,            RatePct = 25 },
+            new() { Label = "91-180 days", MinDays = 91,  MaxDays = 180,           RatePct = 50 },
+            new() { Label = "181+ days",   MinDays = 181, MaxDays = int.MaxValue,  RatePct = 100 },
+        }
+    };
+}
+
+/// <summary>A monthly point-in-time inventory valuation snapshot (for trends).</summary>
+public class InventorySnapshot
+{
+    public DateOnly AsOf { get; set; }
+    public decimal OnHandValue { get; set; }
+    public decimal ReserveValue { get; set; }
+    public double Turns { get; set; }
+    public decimal[] BucketValues { get; set; } = Array.Empty<decimal>(); // on-hand value per reserve band
+    public decimal EandOPct => OnHandValue == 0 ? 0 : Math.Round(ReserveValue / OnHandValue * 100, 1);
 }
 
 public enum PoStatus { Draft, Submitted, Approved, Received }

@@ -1,0 +1,14 @@
+@*
+   Segmented sub-tab control shared by the Inventory Overview and Reserve & Aging pages.
+   Pass Active="overview" or Active="reserve".
+*@
+<div class="subnav" role="tablist" aria-label="Inventory views">
+    <a class="subnav-tab @(Active == "overview" ? "is-active" : "")" href="inventory" role="tab"
+       aria-selected="@(Active == "overview")">Overview</a>
+    <a class="subnav-tab @(Active == "reserve" ? "is-active" : "")" href="inventory/reserve" role="tab"
+       aria-selected="@(Active == "reserve")">Reserve &amp; Aging</a>
+</div>
+
+@code {
+    [Parameter] public string Active { get; set; } = "overview";
+}

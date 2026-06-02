@@ -5,7 +5,7 @@ namespace D365CommandCenter.Services;
 /// <summary>Container for the whole demo dataset (one object persisted to localStorage).</summary>
 public class DemoData
 {
-    public int Version { get; set; } = 5;
+    public int Version { get; set; } = 6;
     public string CompanyName { get; set; } = "Alamo Foods Co.";
     public DateOnly AsOf { get; set; }
     public DateTime GeneratedAtUtc { get; set; } = DateTime.UtcNow;
@@ -22,6 +22,8 @@ public class DemoData
     public List<BudgetLine> Budget { get; set; } = new();
     public List<Warehouse> Warehouses { get; set; } = new();
     public List<InventoryItem> Inventory { get; set; } = new();
+    public ReservePolicy ReservePolicy { get; set; } = ReservePolicy.Default();
+    public List<InventorySnapshot> InventorySnapshots { get; set; } = new();
     public List<PurchaseOrder> PurchaseOrders { get; set; } = new();
     public List<SalesOrder> SalesOrders { get; set; } = new();
     public List<ProjectPhase> Phases { get; set; } = new();

@@ -535,3 +535,45 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible,
 /* Home persona cards as links */
 .persona-card--link { cursor: pointer; transition: transform .12s ease, box-shadow .12s ease; }
 .persona-card--link:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+
+/* ============================================================
+   INVENTORY RESERVE & AGING (2026-06-01)
+   ============================================================ */
+/* Sub-tab segmented control */
+.subnav { display:inline-flex; gap:.25rem; background:var(--n-100); border:1px solid var(--border);
+    border-radius:10px; padding:.25rem; margin:0 0 1.2rem; }
+.subnav-tab { padding:.4rem .9rem; border-radius:7px; font-size:.86rem; font-weight:600; text-decoration:none;
+    color:var(--text-muted); transition:background .12s ease, color .12s ease; }
+.subnav-tab:hover { color:var(--text); }
+.subnav-tab.is-active { background:var(--surface); color:var(--afc-accent); box-shadow:var(--shadow-sm); }
+
+/* Reserve policy editor */
+.policy-card { padding:1rem 1.2rem; margin-bottom:1.4rem; }
+.policy-head { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; margin-bottom:.8rem; }
+.policy-head h3 { margin:0 0 .15rem; }
+.policy-bands { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:.8rem; }
+.policy-band { border:1px solid var(--border); border-radius:8px; padding:.6rem .7rem; background:var(--n-50); }
+.policy-band label { display:block; font-size:.78rem; color:var(--text-muted); margin-bottom:.3rem; }
+.policy-rate { display:flex; align-items:center; gap:.3rem; }
+.policy-rate input { width:64px; padding:.3rem .4rem; border:1px solid var(--border); border-radius:6px;
+    font-size:.95rem; font-weight:700; font-variant-numeric:tabular-nums; }
+.policy-rate input:focus-visible { outline:2px solid var(--afc-accent); outline-offset:1px; }
+.policy-amt { font-size:.72rem; color:var(--text-muted); margin-top:.35rem; font-variant-numeric:tabular-nums; }
+
+/* Smart Insights cards */
+.insight-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:1rem; margin:.4rem 0 1.6rem; }
+.insight-card { border:1px solid var(--border); border-left-width:4px; border-radius:10px; padding:.9rem 1.1rem;
+    background:var(--surface); box-shadow:var(--shadow-sm); }
+.insight-card h4 { margin:.4rem 0 .35rem; font-size:.98rem; }
+.insight-card p { margin:.25rem 0; font-size:.86rem; color:var(--text); }
+.insight-card .insight-action { color:var(--afc-accent); font-weight:600; }
+.insight-high { border-left-color:#d13438; }
+.insight-medium { border-left-color:#d9a400; }
+.insight-low { border-left-color:#16a34a; }
+.insight-top { display:flex; justify-content:space-between; align-items:center; }
+.insight-badge { font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+    padding:.12rem .45rem; border-radius:999px; background:var(--n-100); color:var(--text-muted); }
+.insight-high .insight-badge { background:#fde7e9; color:#b10e1c; }
+.insight-medium .insight-badge { background:#fff4ce; color:#8a6d00; }
+.insight-low .insight-badge { background:#dff6dd; color:#0e700e; }
+.insight-impact { font-size:.95rem; font-weight:700; font-variant-numeric:tabular-nums; }

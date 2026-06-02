@@ -10,12 +10,24 @@ public enum AppEnvironment { Production, Sandbox, Development }
 public class UiState
 {
     private const string EnvKey = "ui-environment";
+    private const string DarkKey = "ui-dark";
+    private const string DensityKey = "ui-density";
+    private const string LandingKey = "ui-landing";
     private readonly BrowserStorage _storage;
     private bool _loaded;
 
     public UiState(BrowserStorage storage) => _storage = storage;
 
     public AppEnvironment Environment { get; private set; } = AppEnvironment.Sandbox;
+
+    /// <summary>Dark appearance toggle (persisted).</summary>
+    public bool DarkMode { get; private set; }
+
+    /// <summary>UI density: "comfortable" (default) or "compact" (persisted).</summary>
+    public string Density { get; private set; } = "comfortable";
+
+    /// <summary>Preferred start-page route ("" = Overview); the app opens here once per page load.</summary>
+    public string DefaultLanding { get; private set; } = "";
 
     // Signed-in user (demo identity).
     public string UserName => "Keith Marcy";
@@ -32,6 +44,15 @@ public class UiState
             var saved = await _storage.GetAsync<string>(EnvKey);
             if (!string.IsNullOrEmpty(saved) && Enum.TryParse<AppEnvironment>(saved, out var e))
                 Environment = e;
+
+            var dark = await _storage.GetAsync<string>(DarkKey);
+            if (!string.IsNullOrEmpty(dark)) DarkMode = dark == "1" || dark.ToLower() == "true";
+
+            var density = await _storage.GetAsync<string>(DensityKey);
+            if (density == "compact" || density == "comfortable") Density = density;
+
+            var landing = await _storage.GetAsync<string>(LandingKey);
+            if (landing is not null) DefaultLanding = landing;
         }
         catch { /* ignore — fall back to default */ }
         _loaded = true;
@@ -42,6 +63,30 @@ public class UiState
         if (env == Environment) return;
         Environment = env;
         await _storage.SetAsync(EnvKey, env.ToString());
+        Changed?.Invoke();
+    }
+
+    public async Task SetDarkModeAsync(bool dark)
+    {
+        if (dark == DarkMode) return;
+        DarkMode = dark;
+        await _storage.SetAsync(DarkKey, dark ? "1" : "0");
+        Changed?.Invoke();
+    }
+
+    public async Task SetDensityAsync(string density)
+    {
+        if (density != "compact" && density != "comfortable") return;
+        if (density == Density) return;
+        Density = density;
+        await _storage.SetAsync(DensityKey, density);
+        Changed?.Invoke();
+    }
+
+    public async Task SetDefaultLandingAsync(string route)
+    {
+        DefaultLanding = route ?? "";
+        await _storage.SetAsync(LandingKey, DefaultLanding);
         Changed?.Invoke();
     }
 

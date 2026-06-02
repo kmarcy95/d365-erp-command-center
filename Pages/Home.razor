@@ -1,6 +1,7 @@
 @page "/"
 @inject NavigationManager Nav
 @inject AppData AppData
+@inject UiState Ui
 
 <PageTitle>Overview · D365 ERP Command Center</PageTitle>
 
@@ -78,11 +79,24 @@
     private decimal _passRate;
     private string _goLive = "—";
 
+    // Redirect to the preferred start page once per full page load (SPA-instance static).
+    private static bool _autoNavDone;
+
     protected override async Task OnInitializedAsync()
     {
         try
         {
             await AppData.InitializeAsync();
+            await Ui.InitializeAsync();
+
+            if (!_autoNavDone && !string.IsNullOrEmpty(Ui.DefaultLanding))
+            {
+                _autoNavDone = true;
+                Nav.NavigateTo(Ui.DefaultLanding);
+                return;
+            }
+            _autoNavDone = true;
+
             var d = AppData.Data;
 
             var phases = d.Phases.ToList();

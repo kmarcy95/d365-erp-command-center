@@ -586,3 +586,68 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible,
 .detail-back:hover { text-decoration:underline; }
 .detail-wrap { max-width:880px; background:var(--surface); border:1px solid var(--border);
     border-radius:12px; box-shadow:var(--shadow-sm); padding:1.3rem 1.5rem; }
+
+/* ============================================================
+   DARK MODE + DENSITY (WS4, 2026-06-01)
+   Tokens remap under .theme-dark (applied to the layout root),
+   so all token-driven surfaces/text/borders flip together.
+   ============================================================ */
+.theme-dark {
+    --n-0: #1b1b22;
+    --n-50: #202028;
+    --n-100: #262732;
+    --n-200: #333442;
+    --n-300: #3c3d4e;
+    --n-400: #6b7280;
+    --n-500: #9aa3b2;
+    --n-600: #b9c0cc;
+    --n-700: #d6dae2;
+    --n-900: #e9ebf1;
+    --surface: #1b1b22;
+    --surface-2: #15151b;
+    --border: #323342;
+    --text: #e7e9f0;
+    --text-muted: #9aa3b2;
+    --afc-accent: #4ca0ee;
+    --afc-accent-weak: #1d2a3a;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.45);
+    --shadow-md: 0 4px 12px rgba(0,0,0,.5);
+    --shadow-lg: 0 14px 36px rgba(0,0,0,.6);
+    background: #141418;
+    color: var(--text);
+}
+.theme-dark .app-content,
+.theme-dark .content-inner { background: #141418; }
+.theme-dark .afc-table thead th { background: var(--n-100); }
+.theme-dark .afc-table tbody tr:hover { background: var(--n-100); }
+.theme-dark .detail-wrap,
+.theme-dark .kpi-card,
+.theme-dark .chart-card,
+.theme-dark .policy-card,
+.theme-dark .insight-card { background: var(--surface); }
+.theme-dark .filter-field input,
+.theme-dark .filter-field select,
+.theme-dark .policy-rate input { background: var(--n-100); color: var(--text); border-color: var(--border); }
+.theme-dark .subnav { background: var(--n-100); }
+.theme-dark .reco { background: var(--afc-accent-weak); border-color: #2a3b50; color: #cfe3f5; }
+
+/* Compact density: tighten table + card padding */
+.density-compact .afc-table td,
+.density-compact .afc-table th { padding-top: .32rem; padding-bottom: .32rem; }
+.density-compact .kpi-card { padding: .7rem .85rem; }
+.density-compact .content-inner { padding-top: .6rem; }
+
+/* Settings page */
+.settings-grid { display:grid; gap:1.1rem; max-width:680px; }
+.set-card { padding:1rem 1.2rem; }
+.set-card h3 { margin:0 0 .2rem; font-size:1rem; }
+.set-row { display:flex; justify-content:space-between; align-items:center; gap:1rem; padding:.5rem 0; border-bottom:1px solid var(--border); }
+.set-row:last-child { border-bottom:none; }
+.set-row .set-label { font-size:.9rem; }
+.set-row .set-sub { font-size:.76rem; color:var(--text-muted); }
+.seg { display:inline-flex; gap:.2rem; background:var(--n-100); border:1px solid var(--border); border-radius:8px; padding:.2rem; }
+.seg button { padding:.32rem .7rem; border:0; background:transparent; border-radius:6px; font-size:.84rem; font-weight:600; color:var(--text-muted); cursor:pointer; }
+.seg button.is-active { background:var(--surface); color:var(--afc-accent); box-shadow:var(--shadow-sm); }
+.set-select { padding:.4rem .6rem; border:1px solid var(--border); border-radius:8px; background:var(--surface);
+    color:var(--text); font-size:.86rem; min-width:200px; }
+.set-select:focus-visible { outline:2px solid var(--afc-accent); outline-offset:1px; }

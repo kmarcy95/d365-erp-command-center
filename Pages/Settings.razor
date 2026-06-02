@@ -1,0 +1,115 @@
+@page "/settings"
+@inject AppData AppData
+@inject UiState Ui
+@inject NavigationManager Nav
+<PageTitle>Settings · D365 ERP Command Center</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Settings</h1>
+        <FluentBadge Appearance="Appearance.Accent" Class="persona-badge">Preferences</FluentBadge>
+    </div>
+</div>
+
+<PageMeta AsOf="@AppData.Data.AsOf" GeneratedAtUtc="@AppData.Data.GeneratedAtUtc" Module="Preferences" />
+
+<div class="settings-grid">
+    <FluentCard Class="set-card">
+        <h3>Appearance</h3>
+        <span class="dlg-sub">Personalize how the command center looks. Saved to this browser.</span>
+        <div class="set-row">
+            <div>
+                <div class="set-label">Theme</div>
+                <div class="set-sub">Light or dark interface</div>
+            </div>
+            <div class="seg">
+                <button class="@(Ui.DarkMode ? "" : "is-active")" @onclick="@(() => SetDark(false))">☀️ Light</button>
+                <button class="@(Ui.DarkMode ? "is-active" : "")" @onclick="@(() => SetDark(true))">🌙 Dark</button>
+            </div>
+        </div>
+        <div class="set-row">
+            <div>
+                <div class="set-label">Density</div>
+                <div class="set-sub">Row and card spacing</div>
+            </div>
+            <div class="seg">
+                <button class="@(Ui.Density == "comfortable" ? "is-active" : "")" @onclick="@(() => SetDensity("comfortable"))">Comfortable</button>
+                <button class="@(Ui.Density == "compact" ? "is-active" : "")" @onclick="@(() => SetDensity("compact"))">Compact</button>
+            </div>
+        </div>
+    </FluentCard>
+
+    <FluentCard Class="set-card">
+        <h3>Default start page</h3>
+        <span class="dlg-sub">Jump straight to the page you use most.</span>
+        <div class="set-row">
+            <div>
+                <div class="set-label">Open this page</div>
+                <div class="set-sub">Navigates now and remembers your choice</div>
+            </div>
+            <select class="set-select" @onchange="OnDefaultChanged">
+                @foreach (var p in _pages)
+                {
+                    <option value="@p.Route" selected="@(p.Route == Ui.DefaultLanding)">@p.Name</option>
+                }
+            </select>
+        </div>
+    </FluentCard>
+
+    <FluentCard Class="set-card">
+        <h3>Workspace</h3>
+        <span class="dlg-sub">Read-only context for this demo environment.</span>
+        <div class="set-row"><div class="set-label">Signed in as</div><div>@Ui.UserName · @Ui.UserRole</div></div>
+        <div class="set-row"><div class="set-label">Environment</div><div>@Ui.EnvName</div></div>
+        <div class="set-row"><div class="set-label">Base currency</div><div>@AppInfo.BaseCurrency</div></div>
+        <div class="set-row"><div class="set-label">Fiscal calendar</div><div>@AppInfo.FiscalCalendar</div></div>
+        <div class="set-row"><div class="set-label">Platform</div><div>@AppInfo.Platform</div></div>
+        <div class="set-row"><div class="set-label">Build</div><div>v@AppInfo.Version (@AppInfo.Build)</div></div>
+        <div class="set-row">
+            <div>
+                <div class="set-label">Demo data</div>
+                <div class="set-sub">Restore the seeded dataset</div>
+            </div>
+            <FluentButton Appearance="Appearance.Accent" OnClick="ResetData">Reset demo data</FluentButton>
+        </div>
+    </FluentCard>
+</div>
+
+@code {
+    private record PageRef(string Name, string Route);
+    private readonly PageRef[] _pages =
+    {
+        new("Overview", ""),
+        new("Executive Dashboard", "executive-dashboard"),
+        new("Financial Analytics", "financial-analytics"),
+        new("General Ledger", "general-ledger"),
+        new("Accounts Payable", "accounts-payable"),
+        new("Accounts Receivable", "accounts-receivable"),
+        new("Budget vs Actual", "budget"),
+        new("Procurement", "procurement"),
+        new("Inventory", "inventory"),
+        new("Inventory Reserve & Aging", "inventory/reserve"),
+        new("Sales Orders", "sales-orders"),
+        new("Roadmap & Gantt", "roadmap"),
+        new("RAID Log", "raid"),
+        new("Status Reports", "status-reports"),
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AppData.InitializeAsync();
+        await Ui.InitializeAsync();
+    }
+
+    private async Task SetDark(bool dark) => await Ui.SetDarkModeAsync(dark);
+    private async Task SetDensity(string d) => await Ui.SetDensityAsync(d);
+
+    private async Task OnDefaultChanged(ChangeEventArgs e)
+    {
+        var route = e.Value?.ToString() ?? "";
+        await Ui.SetDefaultLandingAsync(route);
+        Nav.NavigateTo(route);
+    }
+
+    private async Task ResetData() => await AppData.ResetDemoDataAsync();
+}

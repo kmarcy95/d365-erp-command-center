@@ -5,7 +5,7 @@
 
 <div class="page-header">
     <div>
-        <a class="detail-back" href="@(string.IsNullOrEmpty(State.BackUrl) ? "" : State.BackUrl)">‹ @(_hasContent ? State.BackLabel : "Back to dashboard")</a>
+        <a class="detail-back" href="#" @onclick:preventDefault @onclick="Back">‹ @(_hasContent ? State.BackLabel : "Back to dashboard")</a>
         <h1>@(_hasContent ? State.Title : "Details")</h1>
     </div>
 </div>
@@ -30,4 +30,7 @@ else
     private bool _hasContent;
 
     protected override void OnInitialized() => _hasContent = State.Content is not null;
+
+    // NavigateTo("") reliably returns to the app root; an empty href would just reload /detail.
+    private void Back() => Nav.NavigateTo(State.BackUrl);
 }

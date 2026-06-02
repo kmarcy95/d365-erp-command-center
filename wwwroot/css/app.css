@@ -577,3 +577,12 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible,
 .insight-medium .insight-badge { background:#fff4ce; color:#8a6d00; }
 .insight-low .insight-badge { background:#dff6dd; color:#0e700e; }
 .insight-impact { font-size:.95rem; font-weight:700; font-variant-numeric:tabular-nums; }
+
+/* ============================================================
+   FULL-PAGE DETAIL VIEW (replaces dialogs, 2026-06-01)
+   ============================================================ */
+.detail-back { display:inline-block; font-size:.82rem; font-weight:600; color:var(--afc-accent);
+    text-decoration:none; margin-bottom:.2rem; }
+.detail-back:hover { text-decoration:underline; }
+.detail-wrap { max-width:880px; background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; box-shadow:var(--shadow-sm); padding:1.3rem 1.5rem; }

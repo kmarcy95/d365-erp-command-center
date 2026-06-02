@@ -2,7 +2,8 @@
 @inject AppData AppData
 @inject UiState Ui
 @inject IJSRuntime JS
-@inject IDialogService DialogService
+@inject DetailState State
+@inject NavigationManager Nav
 <PageTitle>Accounts Receivable · D365 ERP Command Center</PageTitle>
 
 <div class="print-only print-header">
@@ -253,16 +254,18 @@ else
 
     // ---------------- Drill-down dialogs (with breadcrumb in title) ----------------
 
+    private RenderFragment DrillFrag(ArDrilldownDialog.Args a) =>@<ArDrilldownDialog Content="@a" />;
+    private RenderFragment InvFrag(ArInvoice i) =>@<ArInvoiceDetailDialog Content="@i" />;
+    private void Go(string title, RenderFragment frag)
+    {
+        State.Open("Accounts Receivable ▸ " + title, "Back to Accounts Receivable", "accounts-receivable", frag);
+        Nav.NavigateTo("detail");
+    }
+
     private async Task ShowDrilldown(ArDrilldownDialog.Args args)
     {
-        var parameters = new DialogParameters
-        {
-            Title = "Accounts Receivable ▸ " + args.Title,
-            Width = "820px",
-            PrimaryAction = "Close",
-            SecondaryAction = null
-        };
-        await DialogService.ShowDialogAsync<ArDrilldownDialog>(args, parameters);
+        Go(args.Title, DrillFrag(args));
+        await Task.CompletedTask;
     }
 
     private async Task ShowOutstanding()
@@ -341,14 +344,8 @@ else
     private async Task OpenInvoice(ArInvoice? inv)
     {
         if (inv is null) return;
-        var parameters = new DialogParameters
-        {
-            Title = $"Accounts Receivable ▸ Invoice {inv.Number}",
-            Width = "560px",
-            PrimaryAction = "Close",
-            SecondaryAction = null
-        };
-        await DialogService.ShowDialogAsync<ArInvoiceDetailDialog>(inv, parameters);
+        Go($"Invoice {inv.Number}", InvFrag(inv));
+        await Task.CompletedTask;
     }
 
     private async Task Export()

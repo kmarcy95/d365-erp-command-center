@@ -2,7 +2,8 @@
 @inject AppData AppData
 @inject UiState Ui
 @inject IJSRuntime JS
-@inject IDialogService DialogService
+@inject DetailState State
+@inject NavigationManager Nav
 <PageTitle>Fit-Gap Analysis · D365 ERP Command Center</PageTitle>
 
 <div class="print-only print-header">
@@ -210,16 +211,18 @@ else
 
     private async Task Print() => await JS.InvokeVoidAsync("afcPrint", "");
 
+    private RenderFragment DrillFrag(ExecDrilldownDialog.Args a) =>@<ExecDrilldownDialog Content="@a" />;
+    private RenderFragment ReqFrag(Requirement r) =>@<RequirementDetailDialog Content="@r" />;
+    private void Go(string title, RenderFragment frag)
+    {
+        State.Open("Fit-Gap ▸ " + title, "Back to Fit-Gap Analysis", "fit-gap", frag);
+        Nav.NavigateTo("detail");
+    }
+
     private async Task Show(ExecDrilldownDialog.Args args)
     {
-        var parameters = new DialogParameters
-        {
-            Title = "Fit-Gap ▸ " + args.Title,
-            Width = "720px",
-            PrimaryAction = "Close",
-            SecondaryAction = null
-        };
-        await DialogService.ShowDialogAsync<ExecDrilldownDialog>(args, parameters);
+        Go(args.Title, DrillFrag(args));
+        await Task.CompletedTask;
     }
 
     private async Task ShowFit(FitGap? fit, string title)
@@ -278,14 +281,8 @@ else
     private async Task OpenRequirement(Requirement? r)
     {
         if (r is null) return;
-        var parameters = new DialogParameters
-        {
-            Title = $"Fit-Gap ▸ {r.Code} · {r.Area}",
-            Width = "720px",
-            PrimaryAction = "Close",
-            SecondaryAction = null
-        };
-        await DialogService.ShowDialogAsync<RequirementDetailDialog>(r, parameters);
+        Go($"{r.Code} · {r.Area}", ReqFrag(r));
+        await Task.CompletedTask;
     }
 
     private static string FitGapKind(FitGap fg) => fg switch

@@ -1,0 +1,33 @@
+@page "/detail"
+@inject DetailState State
+@inject NavigationManager Nav
+<PageTitle>@(_hasContent ? State.Title : "Details") · D365 ERP Command Center</PageTitle>
+
+<div class="page-header">
+    <div>
+        <a class="detail-back" href="@(string.IsNullOrEmpty(State.BackUrl) ? "" : State.BackUrl)">‹ @(_hasContent ? State.BackLabel : "Back to dashboard")</a>
+        <h1>@(_hasContent ? State.Title : "Details")</h1>
+    </div>
+</div>
+
+@if (!_hasContent)
+{
+    <EmptyState Emoji="🗂️"
+                Title="Nothing to show here"
+                Message="Open a record, transaction, or KPI from any page to see its details. (Detail views aren't bookmarkable — pick an item from a list.)" />
+    <div style="margin-top:1rem">
+        <FluentButton Appearance="Appearance.Accent" OnClick="@(() => Nav.NavigateTo(""))">Go to dashboard</FluentButton>
+    </div>
+}
+else
+{
+    <div class="detail-wrap">
+        @State.Content
+    </div>
+}
+
+@code {
+    private bool _hasContent;
+
+    protected override void OnInitialized() => _hasContent = State.Content is not null;
+}

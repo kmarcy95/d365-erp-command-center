@@ -2,7 +2,8 @@
 @inject AppData AppData
 @inject UiState Ui
 @inject IJSRuntime JS
-@inject IDialogService DialogService
+@inject DetailState State
+@inject NavigationManager Nav
 <PageTitle>General Ledger · D365 ERP Command Center</PageTitle>
 
 <div class="print-only print-header">
@@ -94,7 +95,7 @@ else
     {
         <div class="grid-wrap">
             <FluentDataGrid Items="@_filtered" Pagination="@_pagination" TGridItem="GlAccount"
-                            OnRowClick="@(async (FluentDataGridRow<GlAccount> row) => await OpenAccount(row.Item))"
+                            OnRowClick="@((FluentDataGridRow<GlAccount> row) => OpenAccount(row.Item))"
                             RowClass="@(_ => "grid-row-clickable")">
                 <PropertyColumn Property="@(a => a.Number)" Title="Account" Sortable="true"
                                 IsDefaultSortColumn="true" InitialSortDirection="SortDirection.Ascending" />
@@ -195,24 +196,23 @@ else
 
     private async Task Print() => await JS.InvokeVoidAsync("afcPrint", "");
 
-    // ---------------- Drill-down dialogs (with breadcrumb in title) ----------------
+    // ---------------- Drill-down detail views (full-page navigation) ----------------
 
-    private async Task Show(ExecDrilldownDialog.Args args)
+    private RenderFragment DrillFrag(ExecDrilldownDialog.Args a) =>@<ExecDrilldownDialog Content="@a" />;
+    private RenderFragment AccountFrag(GlAccount a) =>@<GlAccountDetailDialog Content="@a" />;
+
+    private void Go(string title, RenderFragment frag)
     {
-        var parameters = new DialogParameters
-        {
-            Title = "General Ledger ▸ " + args.Title,
-            Width = "720px",
-            PrimaryAction = "Close",
-            SecondaryAction = null
-        };
-        await DialogService.ShowDialogAsync<ExecDrilldownDialog>(args, parameters);
+        State.Open("General Ledger ▸ " + title, "Back to General Ledger", "general-ledger", frag);
+        Nav.NavigateTo("detail");
     }
 
-    private async Task ShowByType(AccountType type, string title)
+    private void Show(ExecDrilldownDialog.Args args) => Go(args.Title, DrillFrag(args));
+
+    private void ShowByType(AccountType type, string title)
     {
         var accts = _all.Where(a => a.Type == type).OrderByDescending(a => a.Balance).ToList();
-        await Show(new ExecDrilldownDialog.Args
+        Show(new ExecDrilldownDialog.Args
         {
             Title = title,
             Subtitle = $"{accts.Count} {type.ToString().ToLower()} accounts totaling {Fmt.Money(accts.Sum(a => a.Balance))}.",
@@ -225,13 +225,13 @@ else
         });
     }
 
-    private Task ShowAssets() => ShowByType(AccountType.Asset, "Asset Accounts");
-    private Task ShowLiabilities() => ShowByType(AccountType.Liability, "Liability Accounts");
-    private Task ShowEquity() => ShowByType(AccountType.Equity, "Equity Accounts");
+    private void ShowAssets() => ShowByType(AccountType.Asset, "Asset Accounts");
+    private void ShowLiabilities() => ShowByType(AccountType.Liability, "Liability Accounts");
+    private void ShowEquity() => ShowByType(AccountType.Equity, "Equity Accounts");
 
-    private async Task ShowTrialBalance()
+    private void ShowTrialBalance()
     {
-        await Show(new ExecDrilldownDialog.Args
+        Show(new ExecDrilldownDialog.Args
         {
             Title = "Trial Balance",
             Subtitle = $"Debits {Fmt.Money(_debitTotal)} vs credits {Fmt.Money(_creditTotal)} — {(_balanced ? "balanced" : "out of balance")}.",
@@ -248,17 +248,10 @@ else
         });
     }
 
-    private async Task OpenAccount(GlAccount? a)
+    private void OpenAccount(GlAccount? a)
     {
         if (a is null) return;
-        var parameters = new DialogParameters
-        {
-            Title = $"General Ledger ▸ {a.Number} · {a.Name}",
-            Width = "640px",
-            PrimaryAction = "Close",
-            SecondaryAction = null
-        };
-        await DialogService.ShowDialogAsync<GlAccountDetailDialog>(a, parameters);
+        Go($"{a.Number} · {a.Name}", AccountFrag(a));
     }
 
     private async Task Export()

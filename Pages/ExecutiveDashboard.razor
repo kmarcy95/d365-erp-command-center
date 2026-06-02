@@ -2,7 +2,8 @@
 @inject AppData AppData
 @inject UiState Ui
 @inject IJSRuntime JS
-@inject IDialogService DialogService
+@inject DetailState State
+@inject NavigationManager Nav
 <PageTitle>Executive Dashboard · D365 ERP Command Center</PageTitle>
 
 <div class="print-only print-header">
@@ -186,16 +187,13 @@ else
 
     // ---------------- Drill-down dialogs (with breadcrumb in title) ----------------
 
+    private RenderFragment DrillFrag(ExecDrilldownDialog.Args a) =>@<ExecDrilldownDialog Content="@a" />;
+
     private async Task Show(ExecDrilldownDialog.Args args)
     {
-        var parameters = new DialogParameters
-        {
-            Title = "Executive Dashboard ▸ " + args.Title,
-            Width = "720px",
-            PrimaryAction = "Close",
-            SecondaryAction = null
-        };
-        await DialogService.ShowDialogAsync<ExecDrilldownDialog>(args, parameters);
+        State.Open("Executive Dashboard ▸ " + args.Title, "Back to Executive Dashboard", "executive-dashboard", DrillFrag(args));
+        Nav.NavigateTo("detail");
+        await Task.CompletedTask;
     }
 
     private async Task ShowIncome()

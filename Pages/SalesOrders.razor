@@ -2,7 +2,8 @@
 @inject AppData AppData
 @inject UiState Ui
 @inject IJSRuntime JS
-@inject IDialogService DialogService
+@inject DetailState State
+@inject NavigationManager Nav
 <PageTitle>Sales Orders · D365 ERP Command Center</PageTitle>
 
 <div class="print-only print-header">
@@ -193,16 +194,18 @@ else
 
     // ---------------- Drill-down dialogs (with breadcrumb in title) ----------------
 
+    private RenderFragment DrillFrag(KpiDrilldownDialog.Args a) =>@<KpiDrilldownDialog Content="@a" />;
+    private RenderFragment OrderFrag(SalesOrder o) =>@<OrderDetailDialog Content="@o" />;
+    private void Go(string title, RenderFragment frag)
+    {
+        State.Open("Sales Orders ▸ " + title, "Back to Sales Orders", "sales-orders", frag);
+        Nav.NavigateTo("detail");
+    }
+
     private async Task ShowDrilldown(KpiDrilldownDialog.Args args)
     {
-        var parameters = new DialogParameters
-        {
-            Title = "Sales Orders ▸ " + args.Title,
-            Width = "780px",
-            PrimaryAction = "Close",
-            SecondaryAction = null
-        };
-        await DialogService.ShowDialogAsync<KpiDrilldownDialog>(args, parameters);
+        Go(args.Title, DrillFrag(args));
+        await Task.CompletedTask;
     }
 
     private async Task ShowOpenValue()
@@ -282,14 +285,8 @@ else
     private async Task OpenOrder(SalesOrder? order)
     {
         if (order is null) return;
-        var parameters = new DialogParameters
-        {
-            Title = $"Sales Orders ▸ Order {order.Number}",
-            Width = "640px",
-            PrimaryAction = "Close",
-            SecondaryAction = null
-        };
-        await DialogService.ShowDialogAsync<OrderDetailDialog>(order, parameters);
+        Go($"Order {order.Number}", OrderFrag(order));
+        await Task.CompletedTask;
     }
 
     private async Task Export()

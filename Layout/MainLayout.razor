@@ -1,7 +1,8 @@
 @inherits LayoutComponentBase
 @inject AppData AppData
 @inject UiState Ui
-@inject IDialogService DialogService
+@inject DetailState State
+@inject NavigationManager Nav
 @implements IDisposable
 
 <FluentDesignTheme @bind-Mode="@_mode" StorageName="afc-theme" />
@@ -166,17 +167,27 @@
     private void ToggleTheme()
         => _mode = _mode == DesignThemeModes.Light ? DesignThemeModes.Dark : DesignThemeModes.Light;
 
+    private RenderFragment AuditFrag(List<AuditEntry> log) =>@<AuditLogDialog Content="@log" />;
+    private RenderFragment HelpFrag() =>@<ShortcutsHelpDialog Content="" />;
+
+    private void GoDetail(string title, RenderFragment frag)
+    {
+        var back = Nav.ToBaseRelativePath(Nav.Uri);
+        State.Open(title, "Back", back, frag);
+        Nav.NavigateTo("detail");
+    }
+
     private async Task ShowAudit()
     {
         _userOpen = false;
-        var parameters = new DialogParameters { Title = "Activity & Audit Log", Width = "820px", PrimaryAction = "Close", SecondaryAction = null };
-        await DialogService.ShowDialogAsync<AuditLogDialog>(AppData.Data.AuditLog, parameters);
+        GoDetail("Activity & Audit Log", AuditFrag(AppData.Data.AuditLog));
+        await Task.CompletedTask;
     }
 
     private async Task ShowHelpDialog()
     {
-        var parameters = new DialogParameters { Title = "Keyboard Shortcuts", Width = "460px", PrimaryAction = "Close", SecondaryAction = null };
-        await DialogService.ShowDialogAsync<ShortcutsHelpDialog>("", parameters);
+        GoDetail("Keyboard Shortcuts", HelpFrag());
+        await Task.CompletedTask;
     }
 
     [JSInvokable]

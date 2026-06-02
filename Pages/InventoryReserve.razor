@@ -2,7 +2,8 @@
 @inject AppData AppData
 @inject UiState Ui
 @inject IJSRuntime JS
-@inject IDialogService DialogService
+@inject DetailState State
+@inject NavigationManager Nav
 <PageTitle>Inventory Reserve &amp; Aging · D365 ERP Command Center</PageTitle>
 
 <div class="print-only print-header">
@@ -352,16 +353,18 @@ else
 
     // ---------------- Drill-down dialogs ----------------
 
+    private RenderFragment DrillFrag(InventoryDrilldownDialog.Args a) =>@<InventoryDrilldownDialog Content="@a" />;
+    private RenderFragment ItemFrag(InventoryItem i) =>@<InventoryItemDetailDialog Content="@i" />;
+    private void Go(string title, RenderFragment frag)
+    {
+        State.Open("Reserve & Aging ▸ " + title, "Back to Reserve & Aging", "inventory/reserve", frag);
+        Nav.NavigateTo("detail");
+    }
+
     private async Task ShowDrill(InventoryDrilldownDialog.Args args)
     {
-        var parameters = new DialogParameters
-        {
-            Title = "Reserve & Aging ▸ " + args.Title,
-            Width = "780px",
-            PrimaryAction = "Close",
-            SecondaryAction = null
-        };
-        await DialogService.ShowDialogAsync<InventoryDrilldownDialog>(args, parameters);
+        Go(args.Title, DrillFrag(args));
+        await Task.CompletedTask;
     }
 
     private async Task ShowByCategory()
@@ -436,14 +439,8 @@ else
 
     private async Task OpenItem(InventoryItem item)
     {
-        var parameters = new DialogParameters
-        {
-            Title = $"Reserve & Aging ▸ {item.Sku} · {item.Name}",
-            Width = "640px",
-            PrimaryAction = "Close",
-            SecondaryAction = null
-        };
-        await DialogService.ShowDialogAsync<InventoryItemDetailDialog>(item, parameters);
+        Go($"{item.Sku} · {item.Name}", ItemFrag(item));
+        await Task.CompletedTask;
     }
 
     private async Task Export()

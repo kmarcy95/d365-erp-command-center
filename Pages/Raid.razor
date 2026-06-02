@@ -2,7 +2,8 @@
 @inject AppData AppData
 @inject UiState Ui
 @inject IJSRuntime JS
-@inject IDialogService DialogService
+@inject DetailState State
+@inject NavigationManager Nav
 <PageTitle>RAID Log · D365 ERP Command Center</PageTitle>
 
 <style>
@@ -263,16 +264,18 @@ else
 
     private async Task Print() => await JS.InvokeVoidAsync("afcPrint", "");
 
+    private RenderFragment DrillFrag(ExecDrilldownDialog.Args a) =>@<ExecDrilldownDialog Content="@a" />;
+    private RenderFragment EntryFrag(RaidEntry r) =>@<RaidEntryDetailDialog Content="@r" />;
+    private void Go(string title, RenderFragment frag)
+    {
+        State.Open("RAID ▸ " + title, "Back to RAID Log", "raid", frag);
+        Nav.NavigateTo("detail");
+    }
+
     private async Task Show(ExecDrilldownDialog.Args args)
     {
-        var parameters = new DialogParameters
-        {
-            Title = "RAID ▸ " + args.Title,
-            Width = "720px",
-            PrimaryAction = "Close",
-            SecondaryAction = null
-        };
-        await DialogService.ShowDialogAsync<ExecDrilldownDialog>(args, parameters);
+        Go(args.Title, DrillFrag(args));
+        await Task.CompletedTask;
     }
 
     private async Task ShowByType(RaidType? type, string title)
@@ -310,14 +313,8 @@ else
 
     private async Task OpenEntry(RaidEntry r)
     {
-        var parameters = new DialogParameters
-        {
-            Title = $"RAID ▸ {r.Id} · {r.Type}",
-            Width = "640px",
-            PrimaryAction = "Close",
-            SecondaryAction = null
-        };
-        await DialogService.ShowDialogAsync<RaidEntryDetailDialog>(r, parameters);
+        Go($"{r.Id} · {r.Type}", EntryFrag(r));
+        await Task.CompletedTask;
     }
 
     private static string ScoreClass(int score) => score >= 15 ? "hm-red" : score >= 8 ? "hm-amber" : "hm-green";

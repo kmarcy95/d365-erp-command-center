@@ -2,7 +2,8 @@
 @inject AppData AppData
 @inject UiState Ui
 @inject IJSRuntime JS
-@inject IDialogService DialogService
+@inject DetailState State
+@inject NavigationManager Nav
 <PageTitle>Requirements Traceability Matrix · D365 ERP Command Center</PageTitle>
 
 <div class="print-only print-header">
@@ -227,16 +228,18 @@ else
         _ => "neutral"
     };
 
+    private RenderFragment DrillFrag(ExecDrilldownDialog.Args a) =>@<ExecDrilldownDialog Content="@a" />;
+    private RenderFragment ReqFrag(Requirement r) =>@<RequirementDetailDialog Content="@r" />;
+    private void Go(string title, RenderFragment frag)
+    {
+        State.Open("Traceability ▸ " + title, "Back to Traceability Matrix", "rtm", frag);
+        Nav.NavigateTo("detail");
+    }
+
     private async Task Show(ExecDrilldownDialog.Args args)
     {
-        var parameters = new DialogParameters
-        {
-            Title = "Traceability ▸ " + args.Title,
-            Width = "720px",
-            PrimaryAction = "Close",
-            SecondaryAction = null
-        };
-        await DialogService.ShowDialogAsync<ExecDrilldownDialog>(args, parameters);
+        Go(args.Title, DrillFrag(args));
+        await Task.CompletedTask;
     }
 
     private async Task ShowStatus(string? status, string title)
@@ -279,14 +282,8 @@ else
     private async Task OpenRequirement(Requirement? r)
     {
         if (r is null) return;
-        var parameters = new DialogParameters
-        {
-            Title = $"Traceability ▸ {r.Code} · {r.Area}",
-            Width = "720px",
-            PrimaryAction = "Close",
-            SecondaryAction = null
-        };
-        await DialogService.ShowDialogAsync<RequirementDetailDialog>(r, parameters);
+        Go($"{r.Code} · {r.Area}", ReqFrag(r));
+        await Task.CompletedTask;
     }
 
     private async Task Export()

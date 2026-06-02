@@ -2,7 +2,8 @@
 @inject AppData AppData
 @inject UiState Ui
 @inject IJSRuntime JS
-@inject IDialogService DialogService
+@inject DetailState State
+@inject NavigationManager Nav
 <PageTitle>Test and UAT Management · D365 ERP Command Center</PageTitle>
 
 <div class="print-only print-header">
@@ -238,16 +239,18 @@ else
 
     private async Task Print() => await JS.InvokeVoidAsync("afcPrint", "");
 
+    private RenderFragment DrillFrag(ExecDrilldownDialog.Args a) =>@<ExecDrilldownDialog Content="@a" />;
+    private RenderFragment CaseFrag(TestCase t) =>@<TestCaseDetailDialog Content="@t" />;
+    private void Go(string title, RenderFragment frag)
+    {
+        State.Open("Test & UAT ▸ " + title, "Back to Test & UAT", "test-management", frag);
+        Nav.NavigateTo("detail");
+    }
+
     private async Task Show(ExecDrilldownDialog.Args args)
     {
-        var parameters = new DialogParameters
-        {
-            Title = "Test & UAT ▸ " + args.Title,
-            Width = "720px",
-            PrimaryAction = "Close",
-            SecondaryAction = null
-        };
-        await DialogService.ShowDialogAsync<ExecDrilldownDialog>(args, parameters);
+        Go(args.Title, DrillFrag(args));
+        await Task.CompletedTask;
     }
 
     private async Task ShowResult(TestResult result, string title)
@@ -305,14 +308,8 @@ else
     private async Task OpenCase(TestCase? t)
     {
         if (t is null) return;
-        var parameters = new DialogParameters
-        {
-            Title = $"Test & UAT ▸ {t.Code}",
-            Width = "720px",
-            PrimaryAction = "Close",
-            SecondaryAction = null
-        };
-        await DialogService.ShowDialogAsync<TestCaseDetailDialog>(t, parameters);
+        Go(t.Code, CaseFrag(t));
+        await Task.CompletedTask;
     }
 
     private async Task Export()

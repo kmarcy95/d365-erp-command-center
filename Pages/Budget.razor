@@ -2,7 +2,8 @@
 @inject AppData AppData
 @inject UiState Ui
 @inject IJSRuntime JS
-@inject IDialogService DialogService
+@inject DetailState State
+@inject NavigationManager Nav
 <PageTitle>Budget vs Actual · D365 ERP Command Center</PageTitle>
 
 @* ---- Print-only report header (#4) ---- *@
@@ -301,16 +302,18 @@ else
 
     // ---------------- Drill-down dialogs (with breadcrumb in title) ----------------
 
+    private RenderFragment DrillFrag(ExecDrilldownDialog.Args a) =>@<ExecDrilldownDialog Content="@a" />;
+    private RenderFragment LineFrag(BudgetLine b) =>@<BudgetLineDetailDialog Content="@b" />;
+    private void Go(string title, RenderFragment frag)
+    {
+        State.Open("Budget vs Actual ▸ " + title, "Back to Budget vs Actual", "budget", frag);
+        Nav.NavigateTo("detail");
+    }
+
     private async Task Show(ExecDrilldownDialog.Args args)
     {
-        var parameters = new DialogParameters
-        {
-            Title = "Budget vs Actual ▸ " + args.Title,
-            Width = "720px",
-            PrimaryAction = "Close",
-            SecondaryAction = null
-        };
-        await DialogService.ShowDialogAsync<ExecDrilldownDialog>(args, parameters);
+        Go(args.Title, DrillFrag(args));
+        await Task.CompletedTask;
     }
 
     private async Task ShowByDepartment()
@@ -370,14 +373,8 @@ else
     private async Task OpenLine(BudgetLine? line)
     {
         if (line is null) return;
-        var parameters = new DialogParameters
-        {
-            Title = $"Budget vs Actual ▸ {line.Department} · {line.Category}",
-            Width = "680px",
-            PrimaryAction = "Close",
-            SecondaryAction = null
-        };
-        await DialogService.ShowDialogAsync<BudgetLineDetailDialog>(line, parameters);
+        Go($"{line.Department} · {line.Category}", LineFrag(line));
+        await Task.CompletedTask;
     }
 
     private async Task Export()

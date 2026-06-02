@@ -2,7 +2,8 @@
 @inject AppData AppData
 @inject UiState Ui
 @inject IJSRuntime JS
-@inject IDialogService DialogService
+@inject DetailState State
+@inject NavigationManager Nav
 <PageTitle>Roadmap and Gantt · D365 ERP Command Center</PageTitle>
 
 <style>
@@ -224,16 +225,18 @@ else
 
     private async Task Print() => await JS.InvokeVoidAsync("afcPrint", "");
 
+    private RenderFragment DrillFrag(ExecDrilldownDialog.Args a) =>@<ExecDrilldownDialog Content="@a" />;
+    private RenderFragment MsFrag(Milestone m) =>@<MilestoneDetailDialog Content="@m" />;
+    private void Go(string title, RenderFragment frag)
+    {
+        State.Open("Roadmap ▸ " + title, "Back to Roadmap", "roadmap", frag);
+        Nav.NavigateTo("detail");
+    }
+
     private async Task Show(ExecDrilldownDialog.Args args)
     {
-        var parameters = new DialogParameters
-        {
-            Title = "Roadmap ▸ " + args.Title,
-            Width = "720px",
-            PrimaryAction = "Close",
-            SecondaryAction = null
-        };
-        await DialogService.ShowDialogAsync<ExecDrilldownDialog>(args, parameters);
+        Go(args.Title, DrillFrag(args));
+        await Task.CompletedTask;
     }
 
     private async Task ShowPhases()
@@ -294,14 +297,8 @@ else
 
     private async Task OpenMilestone(Milestone m)
     {
-        var parameters = new DialogParameters
-        {
-            Title = $"Roadmap ▸ {m.Name}",
-            Width = "640px",
-            PrimaryAction = "Close",
-            SecondaryAction = null
-        };
-        await DialogService.ShowDialogAsync<MilestoneDetailDialog>(m, parameters);
+        Go(m.Name, MsFrag(m));
+        await Task.CompletedTask;
     }
 
     private static string RagText(RagStatus r) => r switch

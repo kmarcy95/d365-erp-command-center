@@ -14,5 +14,6 @@ builder.Services.AddFluentUIComponents();
 builder.Services.AddScoped<BrowserStorage>();
 builder.Services.AddScoped<AppData>();
 builder.Services.AddScoped<UiState>();
+builder.Services.AddScoped<DetailState>();
 
 await builder.Build().RunAsync();

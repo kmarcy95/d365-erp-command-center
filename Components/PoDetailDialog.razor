@@ -1,4 +1,6 @@
 @implements IDialogContentComponent<PurchaseOrder>
+@implements IDisposable
+@inject Workflow Workflow
 
 <div class="dlg-content">
     <div class="dlg-facts">
@@ -6,8 +8,10 @@
         <div><span class="dlg-fact-label">Vendor</span><span>@Content.VendorName (@Content.VendorNumber)</span></div>
         <div><span class="dlg-fact-label">Buyer</span><span>@Content.Buyer</span></div>
         <div><span class="dlg-fact-label">Status</span><span><StatusBadge Text="@Content.Status.ToString()" Kind="@StatusKind(Content.Status)" /></span></div>
-        <div><span class="dlg-fact-label">Approval</span><span><StatusBadge Text="@Content.ApprovalStatus" Kind="@(Content.ApprovalStatus == "Approved" ? "good" : "warn")" /></span></div>
+        <div><span class="dlg-fact-label">Approval</span><span><StatusBadge Text="@Content.ApprovalStatus" Kind="@(Content.ApprovalStatus == "Approved" ? "good" : Content.ApprovalStatus == "Rejected" ? "bad" : "warn")" /></span></div>
     </div>
+
+    <WorkflowBar Actions="@BuildActions()" />
 
     <h4 class="dlg-section">Order</h4>
     <table class="afc-table dlg-table">
@@ -22,6 +26,62 @@
 
 @code {
     [Parameter] public PurchaseOrder Content { get; set; } = default!;
+
+    protected override void OnInitialized() => Workflow.Changed += OnChanged;
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Workflow.Changed -= OnChanged;
+
+    private List<WorkflowBar.WfAction> BuildActions()
+    {
+        var po = Content;
+        var list = new List<WorkflowBar.WfAction>();
+        var label = $"PO {po.Number} · {po.VendorName} ({Fmt.Money(po.Total)})";
+
+        if (po.Status == PoStatus.Draft)
+        {
+            var prevA = po.ApprovalStatus;
+            list.Add(new WorkflowBar.WfAction
+            {
+                Label = "Submit for approval", Kind = "primary", Module = "Procurement",
+                Action = "Submitted PO", Detail = label,
+                ConfirmPrompt = $"Submit {po.Number} for approval?",
+                Apply = () => { po.Status = PoStatus.Submitted; po.ApprovalStatus = "Pending"; },
+                Revert = () => { po.Status = PoStatus.Draft; po.ApprovalStatus = prevA; }
+            });
+        }
+        else if (po.Status == PoStatus.Submitted)
+        {
+            var prevA = po.ApprovalStatus;
+            list.Add(new WorkflowBar.WfAction
+            {
+                Label = "Approve", Kind = "approve", Module = "Procurement",
+                Action = "Approved PO", Detail = label,
+                ConfirmPrompt = $"Approve {po.Number} for {Fmt.Money(po.Total)}?",
+                Apply = () => { po.Status = PoStatus.Approved; po.ApprovalStatus = "Approved"; },
+                Revert = () => { po.Status = PoStatus.Submitted; po.ApprovalStatus = prevA; }
+            });
+            list.Add(new WorkflowBar.WfAction
+            {
+                Label = "Reject", Kind = "reject", Module = "Procurement",
+                Action = "Rejected PO", Detail = label,
+                ConfirmPrompt = $"Reject {po.Number} and return to draft?",
+                Apply = () => { po.Status = PoStatus.Draft; po.ApprovalStatus = "Rejected"; },
+                Revert = () => { po.Status = PoStatus.Submitted; po.ApprovalStatus = prevA; }
+            });
+        }
+        else if (po.Status == PoStatus.Approved)
+        {
+            list.Add(new WorkflowBar.WfAction
+            {
+                Label = "Mark received", Kind = "primary", Module = "Procurement",
+                Action = "Received PO", Detail = label,
+                ConfirmPrompt = $"Mark {po.Number} as received?",
+                Apply = () => { po.Status = PoStatus.Received; },
+                Revert = () => { po.Status = PoStatus.Approved; }
+            });
+        }
+        return list;
+    }
 
     private int LeadDays => Content.ExpectedDate.DayNumber - Content.OrderDate.DayNumber;
 

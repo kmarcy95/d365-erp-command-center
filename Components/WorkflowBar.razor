@@ -1,0 +1,68 @@
+@inject Workflow Workflow
+@inject UiState Ui
+@implements IDisposable
+
+@*
+   Renders governed action buttons (submit/approve/reject/lock) with an inline two-step
+   confirm, an Undo control for the last action, and environment-aware gating.
+*@
+<div class="wf-bar">
+    @if (!Ui.CanApprove)
+    {
+        <span class="wf-note">🔒 Approvals are change-controlled in @Ui.EnvName — switch to Sandbox or Development to act.</span>
+    }
+    else
+    {
+        @foreach (var a in Actions)
+        {
+            @if (_confirming == a.Key)
+            {
+                <span class="wf-confirm">@a.ConfirmPrompt</span>
+                <button class="wf-btn wf-go" @onclick="@(() => Do(a))">Confirm</button>
+                <button class="wf-btn wf-cancel" @onclick="@(() => _confirming = null)">Cancel</button>
+            }
+            else
+            {
+                <button class="wf-btn wf-@a.Kind" @onclick="@(() => _confirming = a.Key)">@a.Label</button>
+            }
+        }
+    }
+
+    @if (Workflow.LastLabel is not null)
+    {
+        <span class="wf-undo">✓ @Workflow.LastLabel
+            <button class="wf-btn wf-undo-btn" @onclick="Undo">Undo</button></span>
+    }
+</div>
+
+@code {
+    [Parameter] public IEnumerable<WfAction> Actions { get; set; } = Array.Empty<WfAction>();
+
+    private string? _confirming;
+
+    protected override void OnInitialized() => Workflow.Changed += OnChanged;
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Workflow.Changed -= OnChanged;
+
+    private async Task Do(WfAction a)
+    {
+        _confirming = null;
+        await Workflow.ApplyAsync(a.Module, a.Action, a.Detail, a.Apply, a.Revert);
+    }
+
+    private async Task Undo() => await Workflow.UndoAsync();
+
+    /// <summary>One governed action: a transition with its inverse for undo.</summary>
+    public class WfAction
+    {
+        public string Key { get; set; } = Guid.NewGuid().ToString("N");
+        public string Label { get; set; } = "";
+        public string Kind { get; set; } = "primary";   // primary | approve | reject | neutral
+        public string Module { get; set; } = "";
+        public string Action { get; set; } = "";
+        public string Detail { get; set; } = "";
+        public string ConfirmPrompt { get; set; } = "Are you sure?";
+        public Action Apply { get; set; } = () => { };
+        public Action Revert { get; set; } = () => { };
+    }
+}

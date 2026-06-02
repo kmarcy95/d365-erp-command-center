@@ -4,6 +4,8 @@
 @inject IJSRuntime JS
 @inject DetailState State
 @inject NavigationManager Nav
+@inject Workflow Workflow
+@implements IDisposable
 <PageTitle>Budget vs Actual · D365 ERP Command Center</PageTitle>
 
 @* ---- Print-only report header (#4) ---- *@
@@ -70,6 +72,8 @@ else
         <div class="gov-fact"><span class="gf-l">Owner</span><span class="gf-v">@_meta.Owner</span></div>
         <div class="gov-fact"><span class="gf-l">Approved by</span><span class="gf-v">@_meta.Approver@(_meta.ApprovedDate is { } ad ? $" · {ad:MMM d, yyyy}" : "")</span></div>
     </div>
+
+    <WorkflowBar Actions="@BuildBudgetActions()" />
 
     <div class="kpi-grid">
         <KpiCard Label="Total Budget" Value="@Fmt.Money(_totalBudget, _scale)" Sub="Across all departments"
@@ -210,6 +214,76 @@ else
     {
         "Approved" => "✓", "Locked" => "🔒", "Submitted" => "⏳", _ => "✎"
     };
+
+    protected override void OnInitialized() => Workflow.Changed += OnWf;
+    private void OnWf() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Workflow.Changed -= OnWf;
+
+    private List<WorkflowBar.WfAction> BuildBudgetActions()
+    {
+        var m = _meta;
+        var list = new List<WorkflowBar.WfAction>();
+        var label = $"{m.Version} budget";
+        var today = AppData.Data.AsOf;
+
+        if (m.Status == "Draft")
+        {
+            var ps = m.Status; var pd = m.SubmittedDate;
+            list.Add(new WorkflowBar.WfAction
+            {
+                Label = "Submit for approval", Kind = "primary", Module = "Budget",
+                Action = "Submitted budget", Detail = label,
+                ConfirmPrompt = $"Submit the {m.Version} budget for approval?",
+                Apply = () => { m.Status = "Submitted"; m.SubmittedDate = today; },
+                Revert = () => { m.Status = ps; m.SubmittedDate = pd; }
+            });
+        }
+        else if (m.Status == "Submitted")
+        {
+            var ps = m.Status; var pad = m.ApprovedDate; var pa = m.Approver;
+            list.Add(new WorkflowBar.WfAction
+            {
+                Label = "Approve", Kind = "approve", Module = "Budget",
+                Action = "Approved budget", Detail = label,
+                ConfirmPrompt = $"Approve the {m.Version} budget?",
+                Apply = () => { m.Status = "Approved"; m.ApprovedDate = today; m.Approver = Ui.UserName + ", " + Ui.UserRole; },
+                Revert = () => { m.Status = ps; m.ApprovedDate = pad; m.Approver = pa; }
+            });
+            list.Add(new WorkflowBar.WfAction
+            {
+                Label = "Send back", Kind = "reject", Module = "Budget",
+                Action = "Returned budget to draft", Detail = label,
+                ConfirmPrompt = $"Return the {m.Version} budget to draft?",
+                Apply = () => { m.Status = "Draft"; },
+                Revert = () => { m.Status = ps; }
+            });
+        }
+        else if (m.Status == "Approved")
+        {
+            var ps = m.Status;
+            list.Add(new WorkflowBar.WfAction
+            {
+                Label = "Lock", Kind = "primary", Module = "Budget",
+                Action = "Locked budget", Detail = label,
+                ConfirmPrompt = $"Lock the {m.Version} budget? No further edits will be allowed.",
+                Apply = () => { m.Status = "Locked"; },
+                Revert = () => { m.Status = ps; }
+            });
+        }
+        else if (m.Status == "Locked")
+        {
+            var ps = m.Status;
+            list.Add(new WorkflowBar.WfAction
+            {
+                Label = "Reopen", Kind = "neutral", Module = "Budget",
+                Action = "Reopened budget", Detail = label,
+                ConfirmPrompt = $"Reopen the {m.Version} budget to Approved?",
+                Apply = () => { m.Status = "Approved"; },
+                Revert = () => { m.Status = ps; }
+            });
+        }
+        return list;
+    }
 
     protected override async Task OnInitializedAsync()
     {

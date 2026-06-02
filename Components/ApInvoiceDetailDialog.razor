@@ -1,12 +1,16 @@
 @implements IDialogContentComponent<ApInvoice>
+@implements IDisposable
+@inject Workflow Workflow
 
 <div class="dlg-content">
     <div class="dlg-facts">
         <div><span class="dlg-fact-label">Invoice</span><span>@Content.Number</span></div>
         <div><span class="dlg-fact-label">Vendor</span><span>@Content.VendorName (@Content.VendorNumber)</span></div>
         <div><span class="dlg-fact-label">Status</span><span><StatusBadge Text="@Content.Status.ToString()" Kind="@StatusKind(Content.Status)" /></span></div>
-        <div><span class="dlg-fact-label">Approval</span><span><StatusBadge Text="@Content.ApprovalStatus" Kind="@(Content.ApprovalStatus == "Approved" ? "good" : "warn")" /></span></div>
+        <div><span class="dlg-fact-label">Approval</span><span><StatusBadge Text="@Content.ApprovalStatus" Kind="@(Content.ApprovalStatus == "Approved" ? "good" : Content.ApprovalStatus == "On Hold" ? "bad" : "warn")" /></span></div>
     </div>
+
+    <WorkflowBar Actions="@BuildActions()" />
 
     <h4 class="dlg-section">Aging</h4>
     <table class="afc-table dlg-table">
@@ -22,6 +26,51 @@
 
 @code {
     [Parameter] public ApInvoice Content { get; set; } = default!;
+
+    protected override void OnInitialized() => Workflow.Changed += OnChanged;
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Workflow.Changed -= OnChanged;
+
+    private List<WorkflowBar.WfAction> BuildActions()
+    {
+        var inv = Content;
+        var list = new List<WorkflowBar.WfAction>();
+        var label = $"Invoice {inv.Number} · {inv.VendorName} ({Fmt.Money(inv.Amount)})";
+
+        if (inv.Status != InvoiceStatus.Paid && inv.ApprovalStatus != "Approved")
+        {
+            var prevA = inv.ApprovalStatus;
+            list.Add(new WorkflowBar.WfAction
+            {
+                Label = "Approve for payment", Kind = "approve", Module = "AP",
+                Action = "Approved invoice", Detail = label,
+                ConfirmPrompt = $"Approve {inv.Number} for payment of {Fmt.Money(inv.Amount)}?",
+                Apply = () => { inv.ApprovalStatus = "Approved"; },
+                Revert = () => { inv.ApprovalStatus = prevA; }
+            });
+            list.Add(new WorkflowBar.WfAction
+            {
+                Label = "Place on hold", Kind = "reject", Module = "AP",
+                Action = "Held invoice", Detail = label,
+                ConfirmPrompt = $"Place {inv.Number} on hold?",
+                Apply = () => { inv.ApprovalStatus = "On Hold"; },
+                Revert = () => { inv.ApprovalStatus = prevA; }
+            });
+        }
+        else if (inv.Status != InvoiceStatus.Paid && inv.ApprovalStatus == "Approved")
+        {
+            var prevS = inv.Status;
+            list.Add(new WorkflowBar.WfAction
+            {
+                Label = "Record payment", Kind = "primary", Module = "AP",
+                Action = "Paid invoice", Detail = label,
+                ConfirmPrompt = $"Record payment of {Fmt.Money(inv.Amount)} for {inv.Number}?",
+                Apply = () => { inv.Status = InvoiceStatus.Paid; },
+                Revert = () => { inv.Status = prevS; }
+            });
+        }
+        return list;
+    }
 
     private static string StatusKind(InvoiceStatus s) => s switch
     {

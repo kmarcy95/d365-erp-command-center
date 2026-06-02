@@ -15,5 +15,6 @@ builder.Services.AddScoped<BrowserStorage>();
 builder.Services.AddScoped<AppData>();
 builder.Services.AddScoped<UiState>();
 builder.Services.AddScoped<DetailState>();
+builder.Services.AddScoped<Workflow>();
 
 await builder.Build().RunAsync();

@@ -34,6 +34,10 @@ public class UiState
     public string UserRole => "Financial Controller";
     public string UserInitials => "KM";
 
+    /// <summary>Whether the signed-in role may approve/submit/lock records. Approvals are
+    /// disabled in Production (change-controlled) to demonstrate environment-aware gating.</summary>
+    public bool CanApprove => Environment != AppEnvironment.Production;
+
     public event Action? Changed;
 
     public async Task InitializeAsync()
